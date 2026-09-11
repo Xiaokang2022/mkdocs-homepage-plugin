@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mkdocs-homepage-plugin"
+version = "0.1.0"
+description = "Design MkDocs Material homepages as a flow of themed content blocks, written entirely in Markdown."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "mkdocs-homepage-plugin contributors" }]
+keywords = ["mkdocs", "mkdocs-plugin", "material", "homepage", "landing-page", "cards"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: MkDocs",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Documentation",
+    "Topic :: Software Development :: Documentation",
+]
+dependencies = [
+    "mkdocs>=1.5",
+    "Markdown>=3.3",
+    "PyYAML>=5.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "mkdocs-material>=9"]
+
+[project.urls]
+Homepage = "https://github.com/example/mkdocs-homepage-plugin"
+
+[project.entry-points."mkdocs.plugins"]
+homepage = "mkdocs_homepage.plugin:HomepagePlugin"
+
+[tool.setuptools]
+packages = ["mkdocs_homepage"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+mkdocs_homepage = ["assets/*.css", "assets/*.js"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+filterwarnings = ["error::DeprecationWarning:mkdocs_homepage.*"]

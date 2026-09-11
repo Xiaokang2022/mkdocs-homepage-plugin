@@ -1,0 +1,2568 @@
+/*!
+ * mkdocs-homepage-plugin -- homepage blocks for Material for MkDocs.
+ *
+ * Design rules, in order of importance:
+ *
+ * 1. Never name a colour.  Every value is either a Material token
+ *    (--md-default-fg-color, --md-default-fg-color--lightest, --md-shadow-z2, ...)
+ *    or derived from a single `--md-home-hue` that a `theme:` prop overrides.
+ *    That is what makes light/slate, custom `primary`/`accent` palettes and the
+ *    reader's contrast settings all keep working untouched.
+ *
+ * 2. Restate, do not inherit, the theme's scale.  `.md-home` sits inside
+ *    `.md-typeset`, so Material's bare element selectors match our markup:
+ *    headings are sized in `rem` (2em h1 at a 20px root), `[dir="ltr"] .md-typeset ul`
+ *    adds margin-left to our lists, and `.md-icon svg` is a 24px box.  Anything
+ *    the widget draws is therefore restated here, scoped through `.md-home` so it
+ *    wins on specificity rather than on stylesheet order.
+ *
+ * 3. Small type, generous space.  Sizes are in `em` so the widget scales with the
+ *    surrounding text; rhythm comes from gaps, not from bigger fonts.
+ */
+
+/* ==========================================================================
+   1. tokens
+   ========================================================================== */
+
+/* The scheme-independent half of the palette lives on `:root`, and that is not a
+   style choice -- two things depend on it:
+
+   1. The lightbox is appended to `<body>`, so it is *outside* `.md-home` and
+      inherits nothing from it.  Every token was declared on `.md-home`, so
+      `var(--md-home-radius-sm)` was invalid there and `box-shadow` fell back to
+      `none`: the zoomed image rendered with square corners and no shadow, with no
+      console error and no failing assertion to say so.
+   2. The documented `css_vars` overrides are injected as a `:root` block, and a
+      declaration that *matches* `.md-home` beats an inherited one -- so anything
+      declared there was un-overridable however the docs read.
+
+   The derived palette stays on the themed elements below, because it is a
+   function of the hue and has to be recomputed wherever the hue changes. */
+:root {
+  --md-home-hue: 231;
+  --md-home-radius: 0.6em;
+  --md-home-radius-sm: 0.35em;
+  --md-home-reveal-delay: 0ms;
+  --md-home-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --md-home-min: 13em;
+  --md-home-icon-size: 1em;
+
+  /* One rhythm, six steps, each roughly twice the one before.  The file used to
+     carry eight different values between 0.6em and 1.4em (0.6 0.65 0.7 0.8 0.85
+     0.9 1 1.1 1.2 1.4), which is why two panels that read as "the same" never
+     actually lined up -- nothing was shared.  Pick a step, do not invent one. */
+  --md-home-space-1: 0.4em; /* a title and its own description */
+  --md-home-space-2: 0.6em; /* tightly related items */
+  --md-home-space-3: 0.9em; /* between groups inside a surface; the gutter */
+  --md-home-space-4: 1.2em; /* between sub-blocks of a block */
+  --md-home-space-5: 1.6em; /* a block's header, from its content */
+  --md-home-space-6: 2.5em; /* between blocks */
+  --md-home-gap: var(--md-home-space-3);
+
+  /* A surface's own padding has to be *bigger* than the gutter between two of
+     them, or the grid looks crowded: the cards read as cramped not because they
+     were small but because the space inside one was larger than the space
+     between two. */
+  --md-home-pad: var(--md-home-space-4);
+  --md-home-section-gap: var(--md-home-space-6);
+
+  /* A band's inner padding stays inside the section rhythm, so the copy inside a
+     band never looks like it belongs to the block above it. */
+  --md-home-band-pad: clamp(var(--md-home-space-5), 2.6vw, var(--md-home-space-6));
+}
+
+.md-home {
+  /* A second hue, close enough to stay in family and far enough to make the
+     aurora read as light rather than as a flat wash.  Declared here rather than
+     on `:root` because it has to follow a `theme:` that only this element (or a
+     single card) overrides. */
+  --md-home-hue-2: calc(var(--md-home-hue) + 36);
+}
+
+/* Consecutive blocks breathe; the first one does not need a lead-in.
+
+   Only the first *one* is exempt.  The rule used to read
+   `.md-home:first-child + .md-home { margin-block-start: 0 }` as well, which also
+   flattened the second block: with the hero first, the logos row then sat 26px
+   below it (the hero's own bottom margin) while every other pair sat 40px apart.
+   Margins collapse, so the sibling that follows an exempt block needs nothing
+   special -- it just needs to be left alone. */
+.md-typeset .md-home + .md-home {
+  margin-block-start: var(--md-home-section-gap);
+}
+
+.md-typeset .md-home:first-child {
+  margin-block-start: 0;
+}
+
+/* The derived palette is declared on every element that can carry a theme, so a
+   `theme:` on a single card re-derives the accent for that card only, while a
+   card without one inherits its section's hue instead of resetting to indigo.
+   `.md-home-lightbox` is in the list even though it carries no theme: it is
+   appended to `<body>`, so this is the only way it gets the palette at all. */
+:is(
+    .md-home,
+    .md-home__card,
+    .md-home__feature,
+    .md-home__step,
+    .md-home__stat,
+    .md-home__link,
+    .md-home__pane,
+    .md-home-lightbox
+  ) {
+  --md-home-accent: hsl(var(--md-home-hue) 46% 45%);
+  --md-home-accent-soft: hsl(var(--md-home-hue) 40% 62%);
+  /* The tint surfaces are the accent mixed *into the theme's own background*.
+     A fixed lightness instead -- `hsl(hue 22% 14%)` -- collapses into the page
+     in one scheme and glows in the other: for a hue close to the surface's own
+     hue the block would simply vanish.  Mixing keeps the contrast between an
+     accent and its tint constant for every theme. */
+  --md-home-tint: var(--md-default-fg-color--lightest);
+  --md-home-tint: color-mix(in srgb, var(--md-home-accent) 13%, var(--md-default-bg-color));
+  --md-home-tint-strong: var(--md-default-fg-color--lightest);
+  --md-home-tint-strong: color-mix(in srgb, var(--md-home-accent) 24%, var(--md-default-bg-color));
+  --md-home-line: var(--md-default-fg-color--lightest);
+  --md-home-line: color-mix(in srgb, var(--md-home-accent) 22%, var(--md-default-bg-color));
+  --md-home-line-strong: var(--md-default-fg-color--lightest);
+  --md-home-line-strong: color-mix(in srgb, var(--md-home-accent) 42%, var(--md-default-bg-color));
+  --md-home-glow: hsl(var(--md-home-hue) 88% 58% / 0.16);
+  --md-home-shadow: 0 1px 2px hsl(var(--md-home-hue) 30% 25% / 0.05),
+    0 10px 26px -16px hsl(var(--md-home-hue) 30% 25% / 0.3);
+  --md-home-shadow-hover: 0 2px 4px hsl(var(--md-home-hue) 30% 25% / 0.07),
+    0 18px 40px -18px hsl(var(--md-home-hue) 40% 30% / 0.38);
+
+  /* Pressed: the edge itself becomes the light source.  A crisp half-pixel halo
+     draws the lit edge, the outward spill carries the glow past the box, and the
+     inset wash is what makes it read as coming *from* the edge instead of
+     sitting behind the card.  Every layer is the block's own accent, so a
+     `theme:` change moves the glow with it and a hard-coded colour cannot creep
+     in.  Declared in both schemes: the dark one needs lower alphas, or a bright
+     accent on a dark page turns into a lantern. */
+  --md-home-shadow-press: 0 0 0 0.05rem color-mix(in srgb, var(--md-home-accent) 55%, transparent),
+    0 0 1.1rem -0.05rem color-mix(in srgb, var(--md-home-accent) 45%, transparent),
+    inset 0 0 0.9rem -0.45rem color-mix(in srgb, var(--md-home-accent) 65%, transparent);
+
+  /* Icon bubbles: one hairline, so a card icon, a feature icon and a step marker
+     read as one family rather than as three separate attempts at the same thing. */
+  --md-home-bubble-ring: inset 0 0 0 0.05rem color-mix(in srgb, var(--md-home-accent) 16%, transparent);
+  --md-home-bubble-ring-hover: inset 0 0 0 0.05rem color-mix(in srgb, var(--md-home-accent) 30%, transparent),
+    0 0.4em 0.9em -0.5em color-mix(in srgb, var(--md-home-accent) 75%, transparent);
+}
+
+[data-md-color-scheme="slate"]
+  :is(
+    .md-home,
+    .md-home__card,
+    .md-home__feature,
+    .md-home__step,
+    .md-home__stat,
+    .md-home__link,
+    .md-home__pane,
+    .md-home-lightbox
+  ) {
+  --md-home-accent: hsl(var(--md-home-hue) 64% 70%);
+  --md-home-accent-soft: hsl(var(--md-home-hue) 40% 46%);
+  --md-home-glow: hsl(var(--md-home-hue) 92% 64% / 0.22);
+  --md-home-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 28px -18px rgb(0 0 0 / 0.75);
+  --md-home-shadow-hover: 0 2px 6px rgb(0 0 0 / 0.5), 0 20px 44px -20px rgb(0 0 0 / 0.9);
+  --md-home-shadow-press: 0 0 0 0.05rem color-mix(in srgb, var(--md-home-accent) 45%, transparent),
+    0 0 1.4rem -0.05rem color-mix(in srgb, var(--md-home-accent) 30%, transparent),
+    inset 0 0 0.9rem -0.45rem color-mix(in srgb, var(--md-home-accent) 45%, transparent);
+}
+
+/* Theme names only pick a hue.  Declared after `.md-home` so the tie on
+   specificity is won by stylesheet order. */
+.md-home--theme-indigo {
+  --md-home-hue: 231;
+}
+.md-home--theme-blue {
+  --md-home-hue: 207;
+}
+.md-home--theme-cyan {
+  --md-home-hue: 187;
+}
+.md-home--theme-teal {
+  --md-home-hue: 174;
+}
+.md-home--theme-green {
+  --md-home-hue: 122;
+}
+.md-home--theme-lime {
+  --md-home-hue: 88;
+}
+.md-home--theme-amber {
+  --md-home-hue: 45;
+}
+.md-home--theme-orange {
+  --md-home-hue: 33;
+}
+.md-home--theme-deep-orange {
+  --md-home-hue: 14;
+}
+.md-home--theme-pink {
+  --md-home-hue: 340;
+}
+.md-home--theme-purple {
+  --md-home-hue: 291;
+}
+.md-home--theme-deep-purple {
+  --md-home-hue: 262;
+}
+.md-home--theme-blue-grey {
+  --md-home-hue: 199;
+}
+.md-home--theme-slate {
+  --md-home-hue: 220;
+}
+
+/* ==========================================================================
+   2. block shell and the resets Material's `.md-typeset` rules need
+   ========================================================================== */
+
+.md-typeset .md-home {
+  margin-block: var(--md-home-space-5);
+  font-size: 1em;
+  line-height: 1.6;
+}
+
+.md-typeset .md-content__inner > .md-home:first-child {
+  margin-block-start: 0;
+}
+
+.md-home--content {
+  max-width: 46em;
+  margin-inline: auto;
+}
+
+.md-home--wide {
+  max-width: none;
+}
+
+.md-home--align-start {
+  text-align: start;
+}
+
+.md-home--align-center {
+  text-align: center;
+}
+
+.md-home--align-end {
+  text-align: end;
+}
+
+.md-home--align-justify {
+  text-align: justify;
+}
+
+.md-home--align-center :is(.md-home__actions, .md-home__lead) {
+  justify-content: center;
+}
+
+.md-home--align-end :is(.md-home__actions, .md-home__lead) {
+  justify-content: flex-end;
+}
+
+/* `text-align: center` centres the text inside a flex column, but the column's
+   own items still stretch -- which leaves a centred title with a left-aligned
+   icon. The cross axis has to be centred explicitly. */
+.md-home--align-center
+  :is(
+    .md-home__feature,
+    .md-home__feature-link,
+    .md-home__stat,
+    .md-home__showcase-body,
+    .md-home__hero-body,
+    .md-home__cta-body,
+    .md-home__pane
+  ) {
+  align-items: center;
+}
+
+/* `background:` wraps a block in a tinted panel without changing its contents.
+   Same padding token as the decorative bands: `background:` and `pattern:` are
+   two ways of saying "this block is a band", so they have to agree. */
+.md-home--bg-tint,
+.md-home--bg-surface,
+.md-home--bg-accent {
+  border-radius: var(--md-home-radius);
+  padding: var(--md-home-band-pad);
+}
+
+.md-home--bg-tint {
+  background-color: var(--md-home-tint);
+}
+
+.md-home--bg-surface {
+  background-color: var(--md-default-fg-color--lightest);
+}
+
+.md-home--bg-accent {
+  background-color: var(--md-home-tint-strong);
+  box-shadow: inset 0 0 0 0.05rem var(--md-home-line);
+}
+
+/* Material sizes headings in `rem` and colours them `--light`; both are wrong
+   inside a block, where the heading is a label and not a section title. */
+.md-typeset .md-home :is(h1, h2, h3, h4, h5, h6) {
+  font-size: 1em;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0;
+  padding: 0;
+  color: var(--md-default-fg-color);
+  letter-spacing: -0.01em;
+}
+
+.md-typeset .md-home :is(h1, h2, h3, h4, h5, h6)::before {
+  content: none;
+}
+
+/* ==========================================================================
+   2b. the reset tier
+
+   `.md-typeset` styles an *article*: bare element selectors plus the occasional
+   `:not([hidden])`, which lands at (0,1,1)-(0,2,1).  The widget inherits the
+   theme's *palette* on purpose, but not its scale, so every property Material
+   sets that would distort a block is restated here, one step above it.
+
+   Specificity, not file order, is what makes this hold: `.md-typeset .md-home`
+   is (0,2,0) before the element, i.e. (0,2,1) at worst, and the list/grid
+   containers get an extra class because Material writes them as
+   `.md-typeset ul:not([hidden])` -- (0,2,1) -- with `display: flow-root`, which
+   would otherwise turn every grid back into a stacked list.
+   ========================================================================== */
+
+.md-typeset .md-home :is(p, ul, ol, dl) {
+  margin: 0;
+}
+
+.md-typeset .md-home :is(ul, ol) {
+  list-style: none;
+  padding: 0;
+}
+
+.md-typeset .md-home li {
+  margin: 0;
+}
+
+/* (0,3,0): above `.md-typeset ul:not([hidden])`. */
+.md-typeset .md-home .md-home__grid,
+.md-typeset .md-home .md-home__links,
+.md-typeset .md-home .md-home__steps {
+  display: grid;
+}
+
+.md-typeset .md-home .md-home__gallery-track {
+  display: flex;
+}
+
+/* Material makes every figure a centred, fit-content block with a 1em auto
+   margin; a widget figure is a plain box that fills its cell. */
+.md-typeset .md-home figure {
+  display: block;
+  margin: 0;
+  max-width: 100%;
+  text-align: inherit;
+  width: auto;
+}
+
+.md-typeset .md-home img {
+  margin: 0;
+}
+
+.md-typeset .md-home details {
+  display: block;
+  overflow: visible;
+}
+
+.md-typeset .md-home summary {
+  display: block;
+  margin: 0;
+}
+
+/* `.md-icon svg` is 1.2rem (24px at Material's 20px root).  Restating it here
+   would pin every icon to one size, so the size travels as a custom property:
+   components set `--md-home-icon-size` and this rule reads it.  A property can
+   be overridden by a less specific rule, a declaration cannot. */
+.md-typeset .md-home .md-icon {
+  height: var(--md-home-icon-size, 1em);
+  vertical-align: -0.12em;
+  width: var(--md-home-icon-size, 1em);
+}
+
+.md-typeset .md-home .md-icon svg {
+  height: var(--md-home-icon-size, 1em);
+  width: var(--md-home-icon-size, 1em);
+}
+
+/* Icon bubbles carry the box; the `.md-icon` inside stays at 1em. */
+.md-home__card-icon,
+.md-home__feature-icon,
+.md-home__stat-icon {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  justify-content: center;
+}
+
+/* Every *filled* bubble gets the same inner hairline, so the card icon, the
+   feature icon and the step marker read as one family.  Only where there is a
+   fill: an inset ring on a transparent bubble is a box with nothing in it. */
+.md-home__card-icon,
+.md-home__feature:is(
+    .md-home__feature--icon-soft,
+    .md-home__feature--icon-circle,
+    .md-home__feature--icon-square
+  )
+  .md-home__feature-icon,
+.md-home__step-marker {
+  box-shadow: var(--md-home-bubble-ring);
+}
+
+/* --------------------------------------------------------------------------
+   Elevation
+
+   One vocabulary, applied in one place.  A surface is `radius + hairline`; the
+   shadow is what says how far it sits above the page.  Cards had it, and the
+   quotes, logo tiles and link cards did not -- so a testimonial block looked
+   flat next to a card block even though the two are built from the same shape.
+   The text panel and `details` are deliberately left out: they are content
+   containers, and an admonition in Material is flat too.
+   -------------------------------------------------------------------------- */
+
+.md-home__quote,
+.md-home__logos--grid .md-home__logo,
+.md-home__links--cards .md-home__link,
+.md-home__links--buttons .md-home__link {
+  box-shadow: var(--md-home-shadow);
+}
+
+.md-home__icon--missing {
+  border: 1px dashed var(--md-default-fg-color--lightest);
+  border-radius: 0.15em;
+  display: inline-block;
+  vertical-align: -0.12em;
+}
+
+/* Prose containers opt back in to the article's rhythm.  A block's Markdown
+   body must read like the rest of the site, so these rules sit *above* the
+   resets (0,4,x) and hand the list markers and paragraph spacing back.
+
+   The markers are stated, not `revert`ed.  `revert` rolls back to the *user
+   agent* stylesheet, whose marker ladder is depth-based -- and several blocks
+   put prose inside a chrome `<ul>` (the testimonial grid is a `<ul>` of `<li>`),
+   which pushes the body's first level to depth 2 and hands it the hollow
+   `circle` instead of the page's solid `disc`.  Depth is not knowable from
+   inside the widget, so the ladder is flattened: every level gets the marker
+   the page shows at level one. */
+.md-typeset .md-home .md-home__prose :is(ul, ol) {
+  list-style-type: disc;
+  padding-inline-start: 1.4em;
+}
+
+.md-typeset .md-home .md-home__prose ol {
+  list-style-type: decimal;
+}
+
+.md-typeset .md-home .md-home__prose li {
+  margin-block: 0.25em;
+}
+
+.md-typeset .md-home .md-home__prose > :is(p, ul, ol, blockquote, pre, table, figure, details) {
+  margin-block: 0.8em;
+}
+
+.md-typeset .md-home .md-home__prose > :first-child {
+  margin-block-start: 0;
+}
+
+.md-typeset .md-home .md-home__prose > :last-child {
+  margin-block-end: 0;
+}
+
+/* ==========================================================================
+   3. shared pieces: header, eyebrow, actions, grid
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Decorative bands
+
+   `pattern:` turns a block into a *band*: it gains padding, a tint and one
+   decorative layer.  The layer is a pseudo-element at `inset: 0` and the
+   children are lifted above it, so nothing ever overflows the box and no
+   `overflow: hidden` is needed -- which would clip the cards' shadows.
+   -------------------------------------------------------------------------- */
+
+.md-typeset .md-home:is(
+    .md-home--pattern-aurora,
+    .md-home--pattern-grid,
+    .md-home--pattern-dots,
+    .md-home--pattern-rays
+  ) {
+  border-radius: var(--md-home-radius);
+  padding: var(--md-home-band-pad);
+  position: relative;
+}
+
+.md-typeset .md-home:is(
+    .md-home--pattern-aurora,
+    .md-home--pattern-grid,
+    .md-home--pattern-dots,
+    .md-home--pattern-rays
+  )::before {
+  border-radius: inherit;
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+}
+
+.md-typeset .md-home:is(
+    .md-home--pattern-aurora,
+    .md-home--pattern-grid,
+    .md-home--pattern-dots,
+    .md-home--pattern-rays
+  ) > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* Two off-centre pools of light, in the block's own hue and its neighbour.
+   This is the whole "premium" trick: atmosphere, not colour. */
+.md-home--pattern-aurora {
+  background-color: var(--md-home-tint);
+}
+
+.md-home--pattern-aurora::before {
+  background-image:
+    radial-gradient(
+      58% 76% at 12% 0%,
+      var(--md-home-glow),
+      transparent 72%
+    ),
+    radial-gradient(
+      52% 70% at 88% 8%,
+      hsl(var(--md-home-hue-2) 78% 62% / 0.15),
+      transparent 70%
+    ),
+    radial-gradient(
+      70% 90% at 50% 118%,
+      color-mix(in srgb, var(--md-home-accent) 10%, transparent),
+      transparent 72%
+    );
+}
+
+/* A faint engineering grid, faded out towards the bottom. */
+.md-home--pattern-grid {
+  background-color: var(--md-home-tint);
+}
+
+.md-home--pattern-grid::before {
+  background-image:
+    linear-gradient(to right, var(--md-home-line) 0.05rem, transparent 0.05rem),
+    linear-gradient(to bottom, var(--md-home-line) 0.05rem, transparent 0.05rem);
+  background-size: 2.2em 2.2em;
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 18%, #000 52%, transparent);
+  mask-image: linear-gradient(180deg, transparent, #000 18%, #000 52%, transparent);
+  opacity: 0.55;
+}
+
+.md-home--pattern-dots {
+  background-color: var(--md-home-tint);
+}
+
+.md-home--pattern-dots::before {
+  background-image: radial-gradient(var(--md-home-line-strong) 0.06em, transparent 0.07em);
+  background-size: 1.1em 1.1em;
+  -webkit-mask-image: radial-gradient(120% 100% at 50% 0%, #000, transparent 78%);
+  mask-image: radial-gradient(120% 100% at 50% 0%, #000, transparent 78%);
+  opacity: 0.75;
+}
+
+/* A soft cone of light from above -- reads as a spotlight on a title. */
+.md-home--pattern-rays::before {
+  /* Same colour source as the aurora, at two intensities, so the two patterns
+     cannot drift apart when a scheme changes the glow. */
+  background-image: conic-gradient(
+    from 180deg at 50% -20%,
+    transparent 0deg,
+    var(--md-home-glow) 24deg,
+    transparent 48deg,
+    transparent 132deg,
+    color-mix(in srgb, var(--md-home-glow) 60%, transparent) 156deg,
+    transparent 180deg
+  );
+  -webkit-mask-image: linear-gradient(180deg, #000, transparent 88%);
+  mask-image: linear-gradient(180deg, #000, transparent 88%);
+}
+
+/* --------------------------------------------------------------------------
+   Headline treatments
+   -------------------------------------------------------------------------- */
+
+/* Headline treatments.
+
+   Note the *descendant* combinators: `_header()` wraps the title in a
+   `<header>`, so a `> .md-home__title` selector silently matches nothing --
+   which is how the hero quietly fell back to the ordinary section-title size. */
+.md-typeset .md-home.md-home--gradient :is(.md-home__hero-body, .md-home__cta-body) .md-home__title {
+  -webkit-background-clip: text;
+  background-clip: text;
+  background-image: linear-gradient(
+    100deg,
+    var(--md-default-fg-color) 22%,
+    var(--md-home-accent) 92%
+  );
+  color: transparent;
+  /* A gradient-clipped text run has no room for descenders to spare. */
+  padding-block-end: 0.06em;
+}
+
+/* The headline scale is fluid, so it stays in proportion with the viewport
+   instead of jumping at a breakpoint.  Bounded, because a 3000px monitor does
+   not deserve a 60px headline. */
+.md-typeset .md-home :is(.md-home__hero-body, .md-home__cta-body) .md-home__title {
+  font-size: clamp(1.85em, 1.25em + 1.9vw, 2.7em);
+  letter-spacing: -0.022em;
+  line-height: 1.15;
+}
+
+.md-typeset .md-home :is(.md-home__hero-body, .md-home__cta-body) .md-home__subtitle {
+  font-size: clamp(0.95em, 0.9em + 0.25vw, 1.1em);
+  line-height: 1.55;
+  max-width: 36em;
+}
+
+.md-home__note {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.8125em;
+  margin-block-start: var(--md-home-space-3);
+  opacity: 0.9;
+}
+
+/* A hero can carry its own key numbers, which is a stronger opening than a
+   paragraph of adjectives. */
+.md-typeset .md-home .md-home__highlights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em 1.6em;
+  margin-block-start: var(--md-home-space-5);
+  padding-block-start: var(--md-home-space-4);
+  border-block-start: 0.05rem solid var(--md-home-line);
+  list-style: none;
+  max-width: 34em;
+}
+
+.md-home--align-center .md-home__highlights {
+  justify-content: center;
+  margin-inline: auto;
+}
+
+.md-home__highlight {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.4em;
+}
+
+.md-home__highlight-icon {
+  align-self: center;
+  color: var(--md-home-accent);
+  --md-home-icon-size: 1.05em;
+}
+
+.md-home__highlight-value {
+  font-size: 1.15em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.md-home__highlight-label {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.8125em;
+}
+
+.md-home__header {
+  margin-block-end: var(--md-home-space-5);
+}
+
+.md-home__header--center {
+  text-align: center;
+  margin-inline: auto;
+  max-width: 40em;
+}
+
+.md-typeset .md-home .md-home__eyebrow {
+  color: var(--md-home-accent);
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  margin-block-end: var(--md-home-space-2);
+  text-transform: uppercase;
+}
+
+.md-typeset .md-home .md-home__title {
+  font-size: 1.45em;
+  font-weight: 600;
+}
+
+.md-typeset .md-home .md-home__subtitle {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.9375em;
+  /* The same relationship as `.md-home__card-desc`: a heading and its own
+     supporting line.  Two nearby values for one relationship is exactly the
+     drift the scale exists to stop. */
+  margin-block-start: var(--md-home-space-1);
+  max-width: 46em;
+}
+
+.md-home__header--center .md-home__subtitle {
+  margin-inline: auto;
+}
+
+.md-home__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6em;
+  margin-block-start: var(--md-home-space-5);
+}
+
+/* Material sizes `.md-button` for hero calls to action (padding .625em 2em, ~47px
+   tall).  Inside a block that dominates, so restate only the metrics and let the
+   theme keep its colour, border and hover. */
+.md-typeset .md-home .md-button {
+  font-size: 0.875em;
+  line-height: 1.4;
+  padding: 0.6em 1.4em;
+  border-radius: var(--md-home-radius-sm);
+}
+
+.md-home__action {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.5em;
+}
+
+.md-home__action .md-icon {
+  opacity: 0.85;
+}
+
+/* Grid containers: a `.md-home__grid`, but also the link list and the step list,
+   which are grids too.  The `data-home-cols` switch picks between an intrinsic
+   auto-fit track and a minimum size derived from the requested column count. */
+.md-home__grid,
+.md-home__links,
+.md-home__steps {
+  display: grid;
+  gap: var(--md-home-gap);
+  grid-template-columns:
+    repeat(auto-fit, minmax(min(100%, var(--md-home-min)), 1fr));
+}
+
+.md-home__links {
+  --md-home-gap: var(--md-home-space-2);
+}
+
+.md-home__steps {
+  --md-home-gap: var(--md-home-space-3);
+}
+
+/* With an explicit `columns: N` the minimum track size is derived from N, so the
+   grid fills with N columns when it fits and quietly drops to fewer when it does
+   not.  No media queries, and nothing to keep in sync. */
+.md-typeset .md-home :is(.md-home__grid, .md-home__links, .md-home__steps)[data-home-cols] {
+  grid-template-columns:
+    repeat(
+      auto-fit,
+      minmax(
+        min(
+          100%,
+          max(
+            var(--md-home-min),
+            calc(
+              (100% - (var(--md-home-cols) - 1) * var(--md-home-gap)) /
+                var(--md-home-cols)
+            )
+          )
+        ),
+        1fr
+      )
+    );
+}
+
+/* ==========================================================================
+   4. hero
+   ========================================================================== */
+
+.md-home__hero {
+  align-items: center;
+  display: grid;
+  gap: 2em;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 45em) {
+  .md-home__hero {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  }
+}
+
+.md-home__hero--solo {
+  grid-template-columns: 1fr;
+}
+
+.md-home__hero-body {
+  min-width: 0;
+}
+
+.md-typeset .md-home .md-home__title:first-child {
+  margin-block-start: 0;
+}
+
+.md-home__lead {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.9375em;
+  margin-block-start: var(--md-home-space-3);
+}
+
+.md-home__lead > :first-child {
+  margin-block-start: 0;
+}
+
+.md-home__lead > :last-child {
+  margin-block-end: 0;
+}
+
+.md-home__hero-media {
+  min-width: 0;
+}
+
+.md-home--align-start .md-home__hero {
+  align-items: start;
+}
+
+/* ==========================================================================
+   5. cards -- the 3D tilt and its specular highlight
+   ========================================================================== */
+
+.md-typeset .md-home__cards {
+  gap: var(--md-home-gap);
+  padding: 0;
+}
+
+.md-home__cell {
+  display: flex;
+  min-width: 0;
+}
+
+.md-home__cell--span2 {
+  grid-column: span 2;
+}
+
+.md-home__cell--featured {
+  grid-column: span 2;
+}
+
+@media (max-width: 45em) {
+  .md-home__cell--span2,
+  .md-home__cell--featured {
+    grid-column: auto;
+  }
+}
+
+.md-home__card {
+  background-color: var(--md-default-bg-color);
+  border: 0.05rem solid var(--md-home-line);
+  border-radius: var(--md-home-radius);
+  box-shadow: var(--md-home-shadow);
+  color: var(--md-default-fg-color);
+  cursor: pointer;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--md-home-pad);
+  position: relative;
+  text-decoration: none;
+  transform-origin: center;
+  transition: box-shadow 0.35s var(--md-home-ease), border-color 0.35s var(--md-home-ease);
+}
+
+.md-home__card-head {
+  align-items: center;
+  display: flex;
+  gap: 0.5em;
+  justify-content: space-between;
+  margin-block-end: var(--md-home-space-3);
+}
+
+.md-home__card-icon {
+  background-color: var(--md-home-tint);
+  background-image: linear-gradient(
+    145deg,
+    var(--md-home-tint-strong),
+    var(--md-home-tint)
+  );
+  border-radius: var(--md-home-radius-sm);
+  color: var(--md-home-accent);
+  height: 2.25em;
+  --md-home-icon-size: 1.3em;
+  width: 2.25em;
+}
+
+/* A 1px gradient ring, drawn as an inset pseudo-element and revealed on hover.
+   `border-image` cannot be transitioned and a real border cannot hold a
+   gradient, so the ring is a masked overlay: two `linear-gradient(#000) →
+   content-box` layers, xored so only the padding ring survives. */
+.md-home__card--ring::after {
+  background-image: linear-gradient(
+    140deg,
+    var(--md-home-accent),
+    hsl(var(--md-home-hue-2) 72% 60%),
+    transparent 78%
+  );
+  border-radius: inherit;
+  content: "";
+  inset: 0;
+  opacity: 0;
+  padding: 1px;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 0.35s var(--md-home-ease);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .md-home__card--ring:is(:hover, :focus-visible)::after {
+    opacity: 1;
+  }
+}
+
+.md-home__badge {
+  background-color: var(--md-home-tint-strong);
+  border-radius: 0.75em;
+  color: var(--md-home-accent);
+  font-size: 0.6875em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.2em 0.6em;
+  text-transform: uppercase;
+}
+
+.md-home__card-cover {
+  border-radius: var(--md-home-radius-sm);
+  display: block;
+  margin-block-end: var(--md-home-space-3);
+  overflow: hidden;
+}
+
+.md-home__card-title {
+  display: block;
+  font-size: 1.0625em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+
+.md-home__card-desc {
+  color: var(--md-default-fg-color--light);
+  display: block;
+  font-size: 0.875em;
+  margin-block-start: var(--md-home-space-1);
+}
+
+.md-home__card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35em;
+  margin-block-start: var(--md-home-space-3);
+}
+
+.md-home__card-tags > span {
+  background-color: var(--md-default-fg-color--lightest);
+  border-radius: 0.75em;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.6875em;
+  padding: 0.2em 0.55em;
+}
+
+.md-home__card-meta {
+  color: var(--md-default-fg-color--light);
+  display: block;
+  font-size: 0.75em;
+  margin-block-start: var(--md-home-space-2);
+}
+
+.md-home__card-foot {
+  align-items: center;
+  color: var(--md-home-accent);
+  display: flex;
+  font-size: 0.8125em;
+  font-weight: 500;
+  gap: 0.35em;
+  margin-block-start: auto;
+  padding-block-start: var(--md-home-space-4);
+  transition: gap 0.25s var(--md-home-ease);
+}
+
+.md-home__card:hover .md-home__card-foot,
+.md-home__card:focus-visible .md-home__card-foot {
+  gap: 0.6em;
+}
+
+/* Specular highlight: a soft radial pool that tracks the pointer. */
+.md-home__card-glow {
+  background-image: radial-gradient(
+    circle at var(--md-home-mx, 50%) var(--md-home-my, 0%),
+    var(--md-home-glow),
+    transparent 60%
+  );
+  border-radius: inherit;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 0.3s var(--md-home-ease);
+}
+
+.md-home__card-inner {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
+}
+
+/* A hairline of accent along the top edge that only shows up on hover. */
+.md-home__card::before {
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    var(--md-home-accent-soft),
+    transparent
+  );
+  content: "";
+  height: 1px;
+  inset-inline: 0;
+  opacity: 0;
+  position: absolute;
+  top: 0;
+  transition: opacity 0.35s var(--md-home-ease);
+}
+
+/* `overflow: hidden` on the card would kill `preserve-3d`, so the glow carries
+   the radius instead. */
+
+@media (hover: hover) and (pointer: fine) {
+  .md-home__card[data-home-tilt] {
+    transform: perspective(900px) rotateX(var(--md-home-rx, 0deg))
+      rotateY(var(--md-home-ry, 0deg)) translateZ(0);
+    transform-style: preserve-3d;
+    transition: transform 0.45s var(--md-home-ease), box-shadow 0.35s var(--md-home-ease),
+      border-color 0.35s var(--md-home-ease);
+    will-change: transform;
+  }
+
+  /* The tilt answers the pointer in a single frame, so the shadow it drags along
+     must not lag behind it. */
+  .md-home__card[data-home-tilt]:hover {
+    transition-duration: 0.09s, 0.35s, 0.35s;
+  }
+
+  .md-home__card[data-home-tilt]:is(:hover, :focus-visible) .md-home__card-glow {
+    opacity: 1;
+  }
+
+  .md-home__card[data-home-tilt]:is(:hover, :focus-visible)::before {
+    opacity: 1;
+  }
+}
+
+/* Hover lifts *every* card, not only a tiltable one.  With `tilt: false`, or on a
+   device that cannot tilt, a card used to have no hover affordance at all beyond
+   the footer arrow moving -- the card did not look like one thing to press.
+   Gated on `hover` so a touch device cannot get a lift stuck on after a tap;
+   there, `:active` carries the whole interaction. */
+@media (hover: hover) {
+  .md-typeset .md-home .md-home__card:hover {
+    border-color: var(--md-home-line-strong);
+    box-shadow: var(--md-home-shadow-hover);
+  }
+
+  /* ...except where the style deliberately has no edge.  `filled` and `plain`
+     opt out of the border on purpose, and inventing one for a mere hover turns
+     them into a different card.  The shadow still lifts them; only the edge is
+     preserved.
+
+     `:not(:active):not(:focus-visible)` is what makes this an exception to
+     *hover* and not to the press below.  Without it the selector scores (0,5,0)
+     and quietly outranks the (0,4,0) press rule -- measured, not guessed: the
+     plain card kept its transparent border while it was being pressed, which is
+     the one moment it should have had an edge. */
+  .md-typeset .md-home .md-home__cards--plain .md-home__card:hover:not(:active):not(:focus-visible),
+  .md-typeset .md-home .md-home__cards--filled .md-home__card:hover:not(:active):not(:focus-visible) {
+    border-color: transparent;
+  }
+}
+
+/* Pressed: the edge lights up.
+
+   `:active` is deliberately *not* gated on a hover capability -- a finger has no
+   hover, so on a touch screen the press is the only feedback there will ever be.
+   The keyboard's equivalent is `:focus-visible`, and both share this one rule so
+   the two states cannot drift apart.
+
+   This is the loud state: it beats the `box-shadow: none` of the `filled` and
+   `plain` card styles, and it beats the hover exception above, so a card that
+   keeps its edge quiet while merely hovered still lights up when pressed.
+   Specificity (0,4,0), and it sits after the hover rule, so a press also wins
+   over a hover on the same card. */
+.md-typeset .md-home .md-home__card:is(:active, :focus-visible) {
+  border-color: color-mix(in srgb, var(--md-home-accent) 55%, transparent);
+  box-shadow: var(--md-home-shadow-press);
+  /* Fast on the way down, slow on the way back: the base rule's 0.35s is what
+     the release falls back to. */
+  transition-duration: 0.1s;
+}
+
+/* The gradient ring is the crisp edge the glow spills from, so it is revealed by
+   the same two states -- outside the hover query, because a press is available
+   everywhere. */
+.md-home__card--ring:is(:active, :focus-visible)::after {
+  opacity: 1;
+}
+
+/* Card styles ------------------------------------------------------------- */
+
+.md-home__cards--outlined .md-home__card {
+  box-shadow: none;
+}
+
+.md-home__cards--filled .md-home__card {
+  background-color: var(--md-home-tint);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.md-home__cards--filled .md-home__card-icon {
+  background-color: var(--md-default-bg-color);
+}
+
+.md-home__cards--glass .md-home__card {
+  -webkit-backdrop-filter: blur(10px) saturate(140%);
+  backdrop-filter: blur(10px) saturate(140%);
+  /* Opaque first, translucent second: an older engine gets a solid card rather
+     than a transparent one. */
+  background-color: var(--md-default-bg-color);
+  background-color: color-mix(in srgb, var(--md-default-bg-color) 72%, transparent);
+  border-color: var(--md-home-line);
+  border-color: color-mix(in srgb, var(--md-home-line) 80%, transparent);
+}
+
+.md-home__cards--plain .md-home__card {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.md-home__cards--plain .md-home__card:hover {
+  background-color: var(--md-home-tint);
+}
+
+/* The gradient ring belongs to surfaces that have an edge to decorate. */
+.md-home__cards--plain .md-home__card--ring::after,
+.md-home__cards--filled .md-home__card--ring::after {
+  display: none;
+}
+
+/* Centred cards: the whole card content aligns, and the icon and the "read on"
+   affordance stop being pushed to opposite corners. */
+.md-home--align-center .md-home__card-inner {
+  align-items: center;
+  text-align: center;
+}
+
+.md-home--align-center .md-home__card-head {
+  justify-content: center;
+}
+
+.md-home--align-center .md-home__card-desc,
+.md-home--align-center .md-home__card-foot {
+  justify-content: center;
+  margin-inline: auto;
+}
+
+.md-home--align-center .md-home__card-tags {
+  justify-content: center;
+}
+
+/* ==========================================================================
+   6. features
+   ========================================================================== */
+
+.md-home__feature {
+  display: flex;
+  min-width: 0;
+}
+
+.md-home__feature-link {
+  color: inherit;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.35em;
+  min-width: 0;
+  text-decoration: none;
+}
+
+.md-home__feature-icon {
+  color: var(--md-home-accent);
+  --md-home-icon-size: 1.5em;
+  margin-block-end: var(--md-home-space-2);
+  /* The transition belongs on the *resting* rule.  Declared on `:hover` it only
+     ran on the way in, so the icon snapped back the moment the pointer left. */
+  transition: transform 0.3s var(--md-home-ease), box-shadow 0.3s var(--md-home-ease);
+}
+
+.md-home__feature-title {
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.md-home__feature-desc {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.875em;
+}
+
+.md-home__feature--icon-soft .md-home__feature-icon,
+.md-home__feature--icon-circle .md-home__feature-icon,
+.md-home__feature--icon-square .md-home__feature-icon,
+.md-home__feature--icon-solid .md-home__feature-icon {
+  background-color: var(--md-home-tint);
+  height: 2.4em;
+  justify-content: center;
+  margin-block-end: var(--md-home-space-2);
+  width: 2.4em;
+}
+
+.md-home__feature--icon-soft .md-home__feature-icon {
+  border-radius: var(--md-home-radius-sm);
+}
+
+.md-home__feature--icon-circle .md-home__feature-icon {
+  border-radius: 50%;
+}
+
+.md-home__feature--icon-square .md-home__feature-icon {
+  border-radius: 0.1em;
+}
+
+.md-home__feature--icon-solid .md-home__feature-icon {
+  background-color: var(--md-home-accent);
+  border-radius: var(--md-home-radius-sm);
+  color: var(--md-default-bg-color);
+}
+
+.md-home__feature-link:is(:hover, :focus-visible) .md-home__feature-title {
+  color: var(--md-home-accent);
+}
+
+/* The lift answers the keyboard as well as the pointer, and a filled bubble picks
+   up its stronger ring at the same time as it rises. */
+.md-home__feature-link:is(:hover, :focus-visible) .md-home__feature-icon {
+  transform: translateY(-0.15em);
+}
+
+.md-home__feature:is(
+    .md-home__feature--icon-soft,
+    .md-home__feature--icon-circle,
+    .md-home__feature--icon-square,
+    .md-home__feature--icon-solid
+  )
+  .md-home__feature-link:is(:hover, :focus-visible)
+  .md-home__feature-icon {
+  box-shadow: var(--md-home-bubble-ring-hover);
+}
+
+/* ==========================================================================
+   7. figures / images
+   ========================================================================== */
+.md-home__figure {
+  margin: 0;
+  min-width: 0;
+}
+
+.md-home__figure img {
+  border-radius: var(--md-home-radius-sm);
+  display: block;
+  height: auto;
+  margin: 0;
+  max-width: 100%;
+  width: 100%;
+}
+
+.md-home__figure[style*="--md-home-ratio"] img {
+  aspect-ratio: var(--md-home-ratio);
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.md-home__caption {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.8125em;
+  margin-block-start: var(--md-home-space-2);
+  text-align: center;
+}
+
+.md-home__caption-body {
+  font-size: 0.875em;
+  margin-block-start: var(--md-home-space-2);
+}
+
+.md-home__zoom {
+  display: block;
+  position: relative;
+}
+
+.md-home__figure--shadow img,
+.md-home__figure--shadow .md-home__zoom {
+  box-shadow: var(--md-home-shadow-hover);
+}
+
+.md-home__figure--glow > img,
+.md-home__figure--glow > .md-home__zoom {
+  box-shadow: 0 20px 60px -30px var(--md-home-accent-soft);
+}
+
+/* Screenshot frames: a hairline window chrome, drawn with gradients so it needs
+   no extra markup.  One implementation, shared by the hero, the showcase and a
+   plain image block. */
+.md-home__figure--browser,
+.md-home__figure--window,
+.md-home__figure--screenshot {
+  position: relative;
+}
+
+.md-home__figure--browser {
+  padding-block-start: 1.7em;
+}
+
+.md-home__figure--browser::before {
+  background-image: radial-gradient(circle, var(--md-home-line-strong) 42%, transparent 44%),
+    radial-gradient(circle, var(--md-home-line-strong) 42%, transparent 44%),
+    radial-gradient(circle, var(--md-home-line-strong) 42%, transparent 44%);
+  background-position: 0.8em 50%, 1.6em 50%, 2.4em 50%;
+  background-repeat: no-repeat;
+  background-size: 0.32em 0.32em;
+  border: 0.05rem solid var(--md-home-line);
+  border-bottom: 0;
+  border-radius: var(--md-home-radius-sm) var(--md-home-radius-sm) 0 0;
+  content: "";
+  height: 1.7em;
+  inset-inline: 0;
+  position: absolute;
+  top: 0;
+}
+
+.md-home__figure--browser img,
+.md-home__figure--window img,
+.md-home__figure--screenshot img {
+  border: 0.05rem solid var(--md-home-line);
+  border-radius: var(--md-home-radius-sm);
+}
+
+.md-home__figure--browser img {
+  border-radius: 0 0 var(--md-home-radius-sm) var(--md-home-radius-sm);
+}
+
+/* Floated images let following Markdown prose wrap around them. */
+.md-home__float--left,
+.md-home__float--right {
+  max-width: min(100%, var(--md-home-float-width, 42%));
+}
+
+.md-home__float--left {
+  float: left;
+  margin-inline-end: var(--md-home-space-4);
+}
+
+.md-home__float--right {
+  float: right;
+  margin-inline-start: var(--md-home-space-4);
+}
+
+@media (max-width: 45em) {
+  .md-home__float--left,
+  .md-home__float--right {
+    float: none;
+    margin-inline: 0;
+    max-width: 100%;
+  }
+}
+
+/* ==========================================================================
+   8. gallery -- native scrolling, so touch, trackpad and keyboard all work
+   ========================================================================== */
+
+.md-home__gallery {
+  position: relative;
+}
+
+.md-home__gallery-viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  padding-block-end: var(--md-home-space-2);
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  scrollbar-color: var(--md-home-line-strong) transparent;
+  scrollbar-width: thin;
+}
+
+/* The native bar is the one thing in a carousel that cannot be themed by
+   variable, so it is drawn by hand: a hairline track with a round thumb. */
+.md-home__gallery-viewport::-webkit-scrollbar {
+  height: 0.35em;
+}
+
+.md-home__gallery-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.md-home__gallery-viewport::-webkit-scrollbar-thumb {
+  background-color: var(--md-home-line-strong);
+  border-radius: 1em;
+}
+
+.md-home__gallery-viewport::-webkit-scrollbar-thumb:hover {
+  background-color: var(--md-home-accent-soft);
+}
+
+.md-home__gallery-track {
+  display: flex;
+  gap: var(--md-home-gap);
+  margin: 0;
+  padding: 0;
+}
+
+.md-home .md-home__slide {
+  flex: 0 0
+    calc(
+      (100% - (var(--md-home-per-view, 1) - 1) * var(--md-home-gap)) /
+        var(--md-home-per-view, 1)
+    );
+  list-style: none;
+  margin: 0;
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+.md-home__gallery-nav {
+  display: flex;
+  gap: 0.4em;
+  justify-content: flex-end;
+  margin-block-start: var(--md-home-space-2);
+}
+
+.md-home__gallery-btn {
+  align-items: center;
+  background-color: var(--md-default-bg-color);
+  border: 0.05rem solid var(--md-home-line);
+  border-radius: 50%;
+  color: var(--md-default-fg-color--light);
+  cursor: pointer;
+  display: inline-flex;
+  height: 2em;
+  justify-content: center;
+  --md-home-icon-size: 1.15em;
+  padding: 0;
+  transition: color 0.25s var(--md-home-ease), border-color 0.25s var(--md-home-ease),
+    background-color 0.25s var(--md-home-ease);
+  width: 2em;
+}
+
+.md-home__gallery-btn:is(:hover, :focus-visible) {
+  border-color: var(--md-home-accent);
+  color: var(--md-home-accent);
+}
+
+.md-home__gallery-btn[disabled] {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.md-home__gallery-dots {
+  display: flex;
+  gap: 0.35em;
+  justify-content: center;
+  margin-block-start: var(--md-home-space-2);
+}
+
+.md-home__gallery-dot {
+  background-color: var(--md-default-fg-color--lightest);
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  height: 0.4em;
+  padding: 0;
+  transition: background-color 0.25s var(--md-home-ease), width 0.25s var(--md-home-ease);
+  width: 0.4em;
+}
+
+.md-home__gallery-dot[aria-selected="true"] {
+  background-color: var(--md-home-accent);
+  width: 1.1em;
+  border-radius: 0.2em;
+}
+
+/* Without scripting the carousel is still scrollable, so the buttons go away. */
+@media (scripting: none) {
+  .md-home__gallery-nav,
+  .md-home__gallery-dots {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   9. split layouts
+   ========================================================================== */
+
+.md-home__split {
+  display: grid;
+  gap: var(--md-home-gap);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 45em) {
+  .md-home__split {
+    grid-template-columns: var(--md-home-tracks, repeat(2, minmax(0, 1fr)));
+  }
+}
+
+.md-home__split--reverse {
+  direction: rtl;
+}
+
+.md-home__split--reverse > * {
+  direction: ltr;
+}
+
+.md-home__pane {
+  min-width: 0;
+}
+
+.md-home__pane--ruled {
+  border-inline-start: 0.05rem solid var(--md-home-line);
+  padding-inline-start: var(--md-home-gap);
+}
+
+@media (max-width: 45em) {
+  .md-home__pane--ruled {
+    border-inline-start: 0;
+    padding-inline-start: 0;
+  }
+}
+
+.md-home__pane--sticky {
+  align-self: start;
+  position: sticky;
+  top: 4rem;
+}
+
+.md-home__pane-title {
+  color: var(--md-home-accent);
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  margin-block-end: var(--md-home-space-2);
+  text-transform: uppercase;
+}
+
+.md-typeset .md-home__pane > :first-child {
+  margin-block-start: 0;
+}
+
+.md-typeset .md-home__pane > :last-child {
+  margin-block-end: 0;
+}
+
+/* ==========================================================================
+   10. text blocks
+   ========================================================================== */
+
+.md-home__text {
+  min-width: 0;
+}
+
+.md-home__text > .md-icon {
+  color: var(--md-home-accent);
+  display: block;
+  margin-block-end: 0.4em;
+  --md-home-icon-size: 1.5em;
+}
+
+.md-home__text--panel {
+  background-color: var(--md-home-tint);
+  border-inline-start: 0.15rem solid var(--md-home-accent);
+  border-radius: var(--md-home-radius-sm);
+  padding: var(--md-home-space-3) var(--md-home-space-4);
+}
+
+.md-home__text--lead > p:first-child {
+  color: var(--md-default-fg-color);
+  font-size: 1.0625em;
+}
+
+.md-home__text[style*="--md-home-text-cols"] > .md-home__text-body {
+  columns: var(--md-home-text-cols);
+  column-gap: 1.6em;
+}
+
+.md-home__details {
+  border: 0.05rem solid var(--md-home-line);
+  border-radius: var(--md-home-radius-sm);
+  padding: var(--md-home-space-2) var(--md-home-space-3);
+}
+
+.md-home__details > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   11. stats
+   ========================================================================== */
+
+.md-home .md-home__stat {
+  display: block;
+  min-width: 0;
+}
+
+.md-home__stat-icon {
+  color: var(--md-home-accent);
+  --md-home-icon-size: 1.4em;
+  margin-block-end: 0.4em;
+}
+
+.md-home__stat-value {
+  display: block;
+  font-size: 1.9em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.md-home__stat-prefix,
+.md-home__stat-suffix {
+  color: var(--md-home-accent);
+  font-size: 0.65em;
+  font-weight: 600;
+}
+
+.md-home__stat-label {
+  color: var(--md-default-fg-color--light);
+  display: block;
+  font-size: 0.8125em;
+  margin-block-start: 0.25em;
+}
+
+/* ==========================================================================
+   12. steps
+   ========================================================================== */
+
+@media (min-width: 45em) {
+  .md-home__steps--horizontal {
+    grid-template-columns: repeat(var(--md-home-cols, 3), minmax(0, 1fr));
+  }
+}
+
+.md-home__step {
+  display: flex;
+  gap: 0.8em;
+  min-width: 0;
+}
+
+.md-home__step-marker {
+  align-items: center;
+  background-color: var(--md-home-tint);
+  border-radius: 50%;
+  color: var(--md-home-accent);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 2em;
+  justify-content: center;
+  --md-home-icon-size: 1.1em;
+  position: relative;
+  width: 2em;
+}
+
+.md-home__step-number {
+  font-size: 0.8125em;
+  font-weight: 600;
+}
+
+/* The rail: drawn on the marker so it never shifts the text. */
+.md-home__steps--vertical .md-home__step:not(:last-child) .md-home__step-marker::after {
+  background-color: var(--md-home-line);
+  content: "";
+  inset-inline-start: 50%;
+  position: absolute;
+  top: calc(100% + 0.35em);
+  translate: -50% 0;
+  height: calc(1em - 0.35em);
+  width: 0.05rem;
+}
+
+.md-home__step-body {
+  min-width: 0;
+  padding-block-start: 0.25em;
+}
+
+.md-home__step-title {
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.md-home__step-desc {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.875em;
+  margin-block-start: 0.25em;
+}
+
+.md-home__step-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.md-home__step-link:hover {
+  color: var(--md-home-accent);
+}
+
+/* ==========================================================================
+   13. links
+   ========================================================================== */
+
+.md-home .md-home__link-item {
+  list-style: none;
+  margin: 0;
+  min-width: 0;
+}
+
+.md-home__link {
+  align-items: center;
+  color: inherit;
+  display: flex;
+  gap: 0.7em;
+  min-width: 0;
+  text-decoration: none;
+}
+
+.md-home__link-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.md-home__link-text {
+  font-weight: 500;
+}
+
+.md-home__link-desc {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.8125em;
+}
+
+.md-home__links--list .md-home__link {
+  border-block-end: 0.05rem solid var(--md-home-line);
+  padding-block: var(--md-home-space-2);
+  transition: color 0.25s var(--md-home-ease), padding-inline-start 0.25s var(--md-home-ease);
+}
+
+.md-home__links--list .md-home__link:hover {
+  color: var(--md-home-accent);
+  padding-inline-start: 0.3em;
+}
+
+.md-home__links--list .md-home__link > .md-icon:last-child {
+  margin-inline-start: auto;
+  opacity: 0.5;
+}
+
+.md-home__links--chips .md-home__link,
+.md-home__links--buttons .md-home__link,
+.md-home__links--cards .md-home__link {
+  background-color: var(--md-home-tint);
+  border-radius: var(--md-home-radius-sm);
+  height: 100%;
+  padding: var(--md-home-space-2) var(--md-home-space-3);
+  transition: background-color 0.25s var(--md-home-ease), color 0.25s var(--md-home-ease),
+    box-shadow 0.25s var(--md-home-ease);
+}
+
+.md-home__links--chips .md-home__link > .md-icon:first-child,
+.md-home__links--buttons .md-home__link > .md-icon:first-child,
+.md-home__links--cards .md-home__link > .md-icon:first-child {
+  color: var(--md-home-accent);
+}
+
+.md-home__links--chips .md-home__link:hover,
+.md-home__links--buttons .md-home__link:hover,
+.md-home__links--cards .md-home__link:hover {
+  background-color: var(--md-home-tint-strong);
+  color: var(--md-home-accent);
+  box-shadow: var(--md-home-shadow-hover);
+}
+
+.md-home__links--buttons .md-home__link {
+  border: 0.05rem solid var(--md-home-line);
+  justify-content: center;
+}
+
+/* ==========================================================================
+   14. showcase -- alternating image/text rows
+   ========================================================================== */
+
+.md-home__showcase {
+  display: grid;
+  gap: clamp(2em, 4vw, 3.4em);
+}
+
+.md-home__showcase-row {
+  align-items: center;
+  display: grid;
+  gap: clamp(1.4em, 3vw, 2.8em);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 45em) {
+  .md-home__showcase-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  }
+}
+
+.md-home__showcase-body {
+  min-width: 0;
+}
+
+.md-home__showcase-media {
+  min-width: 0;
+}
+
+.md-home__showcase-media .md-home__figure img {
+  box-shadow: var(--md-home-shadow-hover);
+}
+
+.md-typeset .md-home .md-home__showcase-title {
+  font-size: clamp(1.15em, 1em + 0.5vw, 1.4em);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.3;
+  margin-block: var(--md-home-space-1) var(--md-home-space-2);
+}
+
+.md-home__showcase-desc {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.9375em;
+  max-width: 34em;
+}
+
+.md-typeset .md-home .md-home__bullets {
+  display: grid;
+  gap: 0.45em;
+  list-style: none;
+  margin-block-start: var(--md-home-space-4);
+  max-width: 34em;
+  padding: 0;
+}
+
+.md-home__bullet {
+  align-items: baseline;
+  display: flex;
+  font-size: 0.9375em;
+  gap: 0.6em;
+}
+
+.md-home__bullet-icon {
+  color: var(--md-home-accent);
+  flex: 0 0 auto;
+  --md-home-icon-size: 1.05em;
+}
+
+/* Material's own "read on" affordance: a text link whose arrow steps forward. */
+.md-home__more {
+  align-items: center;
+  color: var(--md-home-accent);
+  display: inline-flex;
+  font-size: 0.9375em;
+  font-weight: 600;
+  gap: 0.4em;
+  margin-block-start: var(--md-home-space-4);
+  text-decoration: none;
+  transition: gap 0.25s var(--md-home-ease);
+}
+
+.md-home__more .md-icon {
+  transition: translate 0.25s var(--md-home-ease);
+}
+
+.md-home__more:is(:hover, :focus-visible) {
+  color: var(--md-home-accent);
+  gap: 0.65em;
+}
+
+.md-home__more:is(:hover, :focus-visible) .md-icon {
+  translate: 0.15em 0;
+}
+
+/* ==========================================================================
+   15. testimonials
+   ========================================================================== */
+
+.md-typeset .md-home .md-home__testimonials {
+  align-items: stretch;
+}
+
+.md-home__testimonial {
+  display: flex;
+  min-width: 0;
+}
+
+.md-home__quote {
+  background-color: var(--md-home-tint);
+  border: 0.05rem solid var(--md-home-line);
+  border-radius: var(--md-home-radius);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  margin: 0;
+  min-width: 0;
+  padding: var(--md-home-pad);
+  position: relative;
+}
+
+.md-home__quote--plain {
+  background-color: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.md-home__quote-mark {
+  color: var(--md-home-accent);
+  opacity: 0.22;
+  --md-home-icon-size: 1.6em;
+  position: absolute;
+  right: var(--md-home-pad);
+  top: var(--md-home-pad);
+}
+
+.md-home__quote-rating {
+  color: var(--md-home-accent);
+  display: flex;
+  gap: 0.1em;
+  margin-block-end: var(--md-home-space-2);
+  --md-home-icon-size: 0.9em;
+}
+
+.md-typeset .md-home .md-home__quote-body {
+  border: 0;
+  color: var(--md-default-fg-color);
+  font-size: 0.9375em;
+  margin: 0;
+  padding: 0;
+}
+
+.md-typeset .md-home .md-home__quote-body > :last-child {
+  margin-block-end: 0;
+}
+
+.md-home__quote-by {
+  align-items: center;
+  display: flex;
+  gap: 0.7em;
+  margin-block-start: auto;
+  padding-block-start: var(--md-home-space-4);
+}
+
+.md-home__quote-avatar {
+  border-radius: 50%;
+  box-shadow: 0 0 0 0.05rem var(--md-home-line), 0 0 0 0.2rem var(--md-home-tint-strong);
+  flex: 0 0 auto;
+  height: 2.6em;
+  overflow: hidden;
+  width: 2.6em;
+}
+
+.md-home__quote-avatar img {
+  display: block;
+  height: 100%;
+  margin: 0;
+  object-fit: cover;
+  width: 100%;
+}
+
+.md-home__quote-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.md-home__quote-name {
+  font-size: 0.875em;
+  font-weight: 600;
+}
+
+.md-home__quote-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.md-home__quote-link:hover {
+  color: var(--md-home-accent);
+}
+
+.md-home__quote-role {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.8125em;
+}
+
+/* A single quote reads better large and unboxed. */
+.md-home__testimonials--quote .md-home__quote {
+  background-color: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.md-typeset .md-home .md-home__testimonials--quote .md-home__quote-body {
+  font-size: clamp(1.05em, 0.95em + 0.4vw, 1.3em);
+  font-weight: 300;
+  letter-spacing: -0.01em;
+  line-height: 1.5;
+}
+
+/* ==========================================================================
+   16. logos -- a "trusted by" row
+   ========================================================================== */
+
+.md-home__logos-caption {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.8125em;
+  letter-spacing: 0.06em;
+  margin-block-end: var(--md-home-space-3);
+  text-transform: uppercase;
+}
+
+.md-home--align-center .md-home__logos-caption {
+  text-align: center;
+}
+
+.md-typeset .md-home .md-home__logos-list {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1em 2em;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.md-home--align-center .md-home__logos-list {
+  justify-content: center;
+}
+
+.md-home__logo-item {
+  display: flex;
+}
+
+.md-home__logo {
+  align-items: center;
+  color: var(--md-default-fg-color--light);
+  display: inline-flex;
+  gap: 0.5em;
+  opacity: 0.62;
+  text-decoration: none;
+  transition: opacity 0.3s var(--md-home-ease), color 0.3s var(--md-home-ease),
+    filter 0.3s var(--md-home-ease);
+}
+
+/* Grayscale is what makes a logo wall read as a wall and not as a rainbow; it
+   only affects image logos, since icon marks are monochrome already. */
+.md-home__logo img {
+  display: block;
+  filter: grayscale(1);
+  height: auto;
+  margin: 0;
+  max-height: var(--md-home-logo-size, 1.9em);
+  width: auto;
+}
+
+.md-home__logo-mark {
+  align-items: center;
+  display: inline-flex;
+  --md-home-icon-size: var(--md-home-logo-size, 1.9em);
+}
+
+.md-home__logo-name {
+  font-size: 0.9375em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.md-home__logo:is(:hover, :focus-visible) {
+  color: var(--md-home-accent);
+  opacity: 1;
+}
+
+.md-home__logo:is(:hover, :focus-visible) img {
+  filter: none;
+}
+
+.md-home__logos--colored .md-home__logo {
+  opacity: 0.85;
+}
+
+.md-home__logos--grid .md-home__logos-list {
+  display: grid;
+  gap: var(--md-home-gap);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10em), 1fr));
+  justify-items: center;
+}
+
+.md-home__logos--grid .md-home__logo {
+  background-color: var(--md-home-tint);
+  border-radius: var(--md-home-radius-sm);
+  justify-content: center;
+  padding: var(--md-home-space-4);
+  width: 100%;
+}
+
+.md-home__marquee--logos .md-home__logos-list {
+  flex-wrap: nowrap;
+}
+
+/* ==========================================================================
+   17. call to action
+   ========================================================================== */
+
+.md-home__cta {
+  align-items: center;
+  display: grid;
+  gap: clamp(1.4em, 3vw, 2.6em);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 45em) {
+  .md-home__cta:has(.md-home__cta-art) {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  }
+}
+
+.md-home__cta--centred .md-home__cta-body {
+  margin-inline: auto;
+  max-width: 44em;
+  text-align: center;
+}
+
+.md-home__cta--centred .md-home__actions,
+.md-home__cta--centred .md-home__highlights {
+  justify-content: center;
+}
+
+.md-home__cta--centred .md-home__subtitle,
+.md-home__cta--centred .md-home__note {
+  margin-inline: auto;
+}
+
+.md-home__cta-art {
+  max-width: 18em;
+  min-width: 0;
+}
+
+.md-home__cta--centred:not(:has(.md-home__cta-art)) .md-home__cta-body {
+  padding-block: var(--md-home-space-1);
+}
+
+/* ==========================================================================
+   18. animation
+   ========================================================================== */
+.md-home__anim--float > .md-home__anim-body,
+.md-home__anim--float .md-home__anim-body {
+  animation: md-home-float var(--md-home-anim-duration, 6s) ease-in-out infinite;
+  animation-delay: var(--md-home-anim-delay, 0s);
+}
+
+@keyframes md-home-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-0.5em);
+  }
+}
+
+.md-home__anim--pulse .md-home__anim-body {
+  animation: md-home-pulse var(--md-home-anim-duration, 2.4s) ease-in-out infinite;
+  animation-delay: var(--md-home-anim-delay, 0s);
+}
+
+@keyframes md-home-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.md-home__anim--shimmer .md-home__anim-body {
+  background-image: linear-gradient(100deg, transparent 20%, var(--md-home-tint-strong) 40%, transparent 60%);
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in srgb, var(--md-home-accent) 22%, transparent) 40%,
+    transparent 60%
+  );
+  background-size: 220% 100%;
+  animation: md-home-shimmer var(--md-home-anim-duration, 3s) linear infinite;
+  animation-delay: var(--md-home-anim-delay, 0s);
+  border-radius: var(--md-home-radius-sm);
+}
+
+@keyframes md-home-shimmer {
+  from {
+    background-position: 140% 0;
+  }
+  to {
+    background-position: -40% 0;
+  }
+}
+
+.md-home__anim--gradient .md-home__anim-body {
+  background-image: linear-gradient(
+    100deg,
+    var(--md-home-accent),
+    var(--md-home-accent-soft),
+    var(--md-home-accent)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  background-size: 220% 100%;
+  color: transparent;
+  animation: md-home-shimmer var(--md-home-anim-duration, 5s) linear infinite;
+}
+
+.md-home__marquee {
+  overflow: hidden;
+  position: relative;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+
+.md-home__marquee-track {
+  display: flex;
+  gap: 2em;
+  width: max-content;
+  animation: md-home-marquee var(--md-home-anim-duration, 22s) linear infinite;
+  animation-delay: var(--md-home-anim-delay, 0s);
+}
+
+.md-home__marquee:hover .md-home__marquee-track {
+  animation-play-state: paused;
+}
+
+.md-home__marquee-item {
+  flex: 0 0 auto;
+}
+
+@keyframes md-home-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.md-home__typing {
+  display: inline;
+}
+
+.md-home__caret {
+  animation: md-home-caret 1s steps(1) infinite;
+  background-color: var(--md-home-accent);
+  display: inline-block;
+  height: 1.05em;
+  margin-inline-start: 0.1em;
+  vertical-align: -0.15em;
+  width: 0.08em;
+}
+
+@keyframes md-home-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ==========================================================================
+   19. divider
+   ========================================================================== */
+
+.md-home--divider {
+  margin-block: 2.25em;
+}
+
+.md-home__divider--line {
+  border-block-start: 0.05rem solid var(--md-home-line);
+}
+
+.md-home__divider--gradient {
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    var(--md-home-accent-soft),
+    transparent
+  );
+  height: 1px;
+}
+
+.md-home__divider--dots::before {
+  color: var(--md-home-accent-soft);
+  content: "• • •";
+  display: block;
+  letter-spacing: 0.4em;
+  text-align: center;
+}
+
+.md-home__divider--wave::before {
+  background-image: radial-gradient(
+    circle at 50% 100%,
+    transparent 0.42em,
+    var(--md-home-line) 0.42em,
+    var(--md-home-line) 0.47em,
+    transparent 0.47em
+  );
+  background-position: 0 0;
+  background-repeat: repeat-x;
+  background-size: 1em 0.5em;
+  content: "";
+  display: block;
+  height: 0.5em;
+  opacity: 0.9;
+}
+
+.md-home__divider--space {
+  height: var(--md-home-divider-space, 2em);
+}
+
+.md-home__divider-label {
+  align-items: center;
+  color: var(--md-default-fg-color--light);
+  display: flex;
+  font-size: 0.8125em;
+  gap: 0.8em;
+  text-align: center;
+}
+
+.md-home__divider-label::before,
+.md-home__divider-label::after {
+  background-color: var(--md-home-line);
+  content: "";
+  flex: 1;
+  height: 0.05rem;
+}
+
+/* ==========================================================================
+   20. scroll reveal
+   ========================================================================== */
+
+/* `@media (scripting: enabled)` is what makes this safe: with JavaScript off the
+   blocks are simply visible, instead of being hidden forever by a class nothing
+   can add. */
+@media (scripting: enabled) and (prefers-reduced-motion: no-preference) {
+  [data-home-reveal] {
+    opacity: 0;
+    transition: opacity 0.55s var(--md-home-ease), transform 0.55s var(--md-home-ease);
+    transition-delay: var(--md-home-reveal-delay, 0ms);
+  }
+
+  [data-home-reveal="up"] {
+    transform: translateY(1.1em);
+  }
+
+  [data-home-reveal="down"] {
+    transform: translateY(-1.1em);
+  }
+
+  [data-home-reveal="left"] {
+    transform: translateX(-1.1em);
+  }
+
+  [data-home-reveal="right"] {
+    transform: translateX(1.1em);
+  }
+
+  [data-home-reveal="zoom"] {
+    transform: scale(0.96);
+  }
+
+  [data-home-reveal].is-home-revealed {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   21. lightbox
+   ========================================================================== */
+
+.md-home-lightbox {
+  align-items: center;
+  background-color: #000;
+  background-color: color-mix(in srgb, var(--md-default-bg-color) 88%, #000);
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  /* The overlay is a child of `<body>`, so it is outside `.md-typeset` -- where
+     `body` is `.5rem` and every `em` in here would resolve to 10px.  The close
+     button came out 20px across instead of 32, and the padding 20px instead of
+     32.  Material restates the base for its own out-of-typeset overlays
+     (`.md-dialog` is `.7rem`); this is the same fix, anchored to the widget's own
+     `.8rem` = 16px so the overlay and the blocks agree. */
+  font-size: 0.8rem;
+  gap: var(--md-home-space-3);
+  height: 100%;
+  inset: 0;
+  justify-content: center;
+  margin: 0;
+  max-height: none;
+  max-width: none;
+  padding: 2em;
+  position: fixed;
+  width: 100%;
+  z-index: 10;
+}
+
+.md-home-lightbox[hidden] {
+  display: none;
+}
+
+.md-home-lightbox img {
+  border-radius: var(--md-home-radius-sm);
+  box-shadow: var(--md-home-shadow-hover);
+  max-height: 84vh;
+  max-width: min(100%, 80em);
+  object-fit: contain;
+}
+
+.md-home-lightbox__caption {
+  color: var(--md-default-fg-color--light);
+  font-size: 0.8125em;
+  text-align: center;
+}
+
+.md-home-lightbox__close {
+  background: none;
+  border: 0;
+  color: var(--md-default-fg-color--light);
+  cursor: pointer;
+  height: 2em;
+  padding: 0;
+  position: absolute;
+  right: 0.9em;
+  top: 0.9em;
+  width: 2em;
+}
+
+/* The X is drawn, not copied: a mistyped SVG path renders a valid but wrong
+   shape, which no test would catch and no reviewer would notice. */
+.md-home-lightbox__close::before,
+.md-home-lightbox__close::after {
+  background-color: currentColor;
+  content: "";
+  height: 0.1rem;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  translate: -50% -50%;
+  width: 0.9em;
+}
+
+.md-home-lightbox__close::before {
+  rotate: 45deg;
+}
+
+.md-home-lightbox__close::after {
+  rotate: -45deg;
+}
+
+.md-home-lightbox__close:hover {
+  color: var(--md-accent-fg-color);
+}
+
+/* ==========================================================================
+   22. error marker -- a malformed block must be loud, not silent
+   ========================================================================== */
+
+.md-home--error {
+  border: 1px dashed #c62828;
+  border-radius: var(--md-home-radius-sm);
+  padding: 0.8em 1em;
+}
+
+.md-home__error-title {
+  color: #c62828;
+  font-family: var(--md-code-font-family, monospace);
+  font-size: 0.8125em;
+  font-weight: 700;
+}
+
+.md-home__error-message {
+  font-family: var(--md-code-font-family, monospace);
+  font-size: 0.8125em;
+}
+
+/* ==========================================================================
+   23. focus, print and reduced motion
+   ========================================================================== */
+
+.md-home :is(a, button, [tabindex]):focus-visible {
+  outline: 0.1rem solid var(--md-accent-fg-color);
+  outline-offset: 0.15rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-home *,
+  .md-home *::before,
+  .md-home *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .md-home__card[data-home-tilt] {
+    transform: none !important;
+  }
+}
+
+@media print {
+  .md-home__card {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+
+  .md-home__gallery-nav,
+  .md-home__gallery-dots,
+  .md-home-lightbox {
+    display: none;
+  }
+}

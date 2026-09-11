@@ -1,0 +1,64 @@
+site_name: Homepage 演示
+site_description: mkdocs-homepage-plugin 功能演示站点
+site_url: https://example.com/
+docs_dir: docs
+site_dir: site
+use_directory_urls: true
+
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: 切换到深色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: 切换到浅色模式
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.inlinehilite
+  - pymdownx.highlight
+
+plugins:
+  - homepage:
+      # 演示站点的默认值：列表类区块默认带滚动错峰动画
+      reveal: auto
+      tilt_strength: 6
+      lightbox: true
+
+nav:
+  - 首页: index.md
+  - 指南:
+      - guide/index.md
+      - guide/syntax.md
+      - guide/blocks.md
+  - 参考:
+      - reference/index.md
+
+extra_css:
+  - assets/extra.css
