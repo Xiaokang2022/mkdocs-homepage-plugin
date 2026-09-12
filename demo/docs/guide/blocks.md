@@ -175,8 +175,8 @@ testimonials:
 | --- | --- |
 | `logos` | 条目列表，见下 |
 | `style` | `row`（默认）/ `grid` / `marquee`（无缝走马灯） |
-| `colored` | 保留品牌原色（默认跟随主题文字色） |
-| `size` | 图标尺寸 |
+| `colored` | 图标标记是否用强调色（默认跟主题文字色），见下 |
+| `size` | 图标 / 图片直径 |
 | `caption` | 品牌墙上方的说明文字 |
 
 条目字段：`icon`（`simple/github` 或 `material/github`）/ `name` / `link` / `desc`。
@@ -189,10 +189,23 @@ logos:
   - simple/github | GitHub | https://github.com
   - simple/python | Python | https://python.org
   - simple/docker | Docker | https://docker.com
-  - image: ../assets/shot-1.svg
+  - image: ../assets/avatar-1.svg
     name: 自己的 Logo
     link: https://example.com
 ```
+
+**图标标记与图片是两种东西，规则也不同：**
+
+| | 图标标记（`icon: simple/github`） | 图片（`image: …`） |
+| --- | --- | --- |
+| 颜色 | 跟随主题文字色；`colored: true` 时用强调色 | **永远是图片自己的颜色** |
+| 形状 | 原样 | 裁成**圆形** |
+| `colored` | 生效 | **不生效** |
+| 默认观感 | 半透明，鼠标移上去才变实 | 原样 |
+
+图片会被裁成圆形，所以**请用正方形图片**：正方形原样呈现，非正方形会居中裁切
+（16:9 的截图放进去会掉掉两边）。`colored` 是给**我们自己着色**的图标标记用的，
+作者提供的品牌图有自己的配色，这个开关不会去动它。
 
 ## image
 

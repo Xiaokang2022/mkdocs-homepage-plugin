@@ -179,6 +179,21 @@ icon: simple/github                    # Simple Icons 品牌标（约 30 个，l
 写错名字会输出警告并列出可用取值。`scripts/generate_icons.py` 负责重新生成，
 `tests/test_icons.py` 会逐 token 对比主题源码，防止拷错。
 
+## 品牌墙
+
+```yaml
+style: marquee      # row / grid / marquee，后者是无缝走马灯
+colored: true       # 图标标记改用强调色（图片不受影响）
+logos:
+  - simple/github | GitHub | https://github.com   # 图标标记：跟随主题调色
+  - image: assets/logo.svg                        # 图片：裁成圆形，永远是自己的颜色
+    name: Acme
+```
+
+图片会裁成圆形，所以**请用正方形图片**（非正方形会居中裁切）。`colored` 只管我们自己
+着色的图标标记；作者提供的品牌图有自己的配色，这个开关不会去动它。
+走马灯是无缝的：两份内容、平移半个轨道，间隙算在周期内，轨道至少两倍视口宽。
+
 ## 插件选项
 
 ```yaml

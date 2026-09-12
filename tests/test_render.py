@@ -246,10 +246,38 @@ def test_logos_use_the_brand_set_and_can_marquee():
     )
     assert "md-home__icon--simple" in html
     assert "md-home__logo-name" in html
-    # The seamless loop needs the row twice; the copy is hidden from screen readers.
-    assert html.count("md-home__logos-list") == 2
-    assert 'aria-hidden="true"' in html
     assert 'href="https://github.com"' in html
+    # One list, four rows: two periods on a SINGLE flex line. Wrapping each period
+    # in its own box put the seam on a different flex line from the logos, so the
+    # seam spacing and the logo spacing were computed independently and could
+    # never match -- which is what made the loop jump.
+    assert html.count("md-home__logos-list") == 1
+    assert html.count('class="md-home__logo-item"') == 4
+    assert "md-home__marquee-item" not in html
+    # The scrolling pass is decoration: out of the accessibility tree *and* out of
+    # the tab order, or a keyboard user walks every brand twice. Only the linked
+    # one is focusable, so only it needs the skip.
+    assert html.count('<li class="md-home__logo-item" aria-hidden="true">') == 2
+    assert html.count('tabindex="-1"') == 1
+
+
+def test_the_marquee_copy_is_hidden_but_still_rendered():
+    """A single logo still needs a second period, or there is nothing to loop."""
+    html = render("```homepage-logos\nstyle: marquee\nlogos:\n  - simple/python | Python\n```")
+    assert html.count('class="md-home__logo-item"') == 2
+    assert html.count('class="md-home__logo-item" aria-hidden="true"') == 1
+    assert html.count("md-home__logo-name") == 2
+
+
+def test_a_non_marquee_row_is_rendered_once():
+    for style in ("row", "grid"):
+        html = render(
+            f"```homepage-logos\nstyle: {style}\nlogos:\n  - simple/python | Python\n"
+            "  - simple/rust | Rust\n```"
+        )
+        assert html.count('class="md-home__logo-item"') == 2, style
+        assert "md-home__logo-item\" aria-hidden" not in html, style
+        assert "tabindex" not in html, style
 
 
 def test_logos_accept_images_too():
@@ -260,6 +288,23 @@ def test_logos_accept_images_too():
     assert '<img src="/logo.svg"' in html
     assert "md-home__logo-name" in html
     assert "Acme" in html
+
+
+def test_a_marquee_loads_its_images_eagerly():
+    """`lazy` is wrong for a strip whose content is about to scroll into view.
+
+    Measured in the browser: the second copy's image sat at `complete: false`
+    with a 0x0 natural size, so it popped in mid-loop instead of being there.
+    A row or a grid may be far down a page and keeps the deferral.
+    """
+    marquee = render(
+        "```homepage-logos\nstyle: marquee\nlogos:\n  - image: /a.svg\n    name: A\n```"
+    )
+    assert marquee.count('loading="eager"') == 2
+    assert "lazy" not in marquee
+
+    row = render("```homepage-logos\nlogos:\n  - image: /a.svg\n    name: A\n```")
+    assert 'loading="lazy"' in row
 
 
 def test_logos_need_a_list():

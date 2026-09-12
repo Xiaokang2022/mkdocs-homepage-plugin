@@ -855,40 +855,59 @@ class BlockRenderer:
         colored = as_bool(props.get("colored"), False)
         caption = first_of(props, "caption", "note", "text")
 
-        cells = []
-        for index, item in enumerate(items):
+        def cell(index: int, item: dict, copy: bool = False) -> str:
+            """One logo row.
+
+            ``copy=True`` marks the second half of a marquee: hidden from assistive
+            technology *and* removed from the tab order, because the pass that
+            scrolls the row past is decoration -- a keyboard user should not have
+            to walk through every brand twice.
+            """
             name = first_of(item, "name", "title", "text")
             link = first_of(item, "link", "url", "href")
             image = first_of(item, "image", "img", "src")
+            # In a marquee the whole point is that the pictures are about to be
+            # scrolled into view, so `lazy` is wrong there: measured in the
+            # browser, the second copy's image stayed at `complete: false` with a
+            # 0x0 natural size until it happened to intersect, i.e. it popped in
+            # mid-loop.  A row or a grid keeps `lazy` -- it may be far down a page.
+            loading = "eager" if style == "marquee" else "lazy"
             mark = (
                 f'<img src="{esc(safe_url(resolve_url(image)))}" alt="{esc(name or "")}"'
-                ' loading="lazy" decoding="async">'
+                f' loading="{loading}" decoding="async">'
                 if image
                 else icon(item.get("icon"), label=name or None)
             )
             label = f'<span class="md-home__logo-name">{self.inline(name)}</span>' if name else ""
             inner = f'<span class="md-home__logo-mark">{mark}</span>{label}'
-            classes_ = "md-home__logo"
+            hidden = ' aria-hidden="true"' if copy else ""
+            skip = ' tabindex="-1"' if copy else ""
             if link:
-                cells.append(
-                    f'<li class="md-home__logo-item"><a class="{classes_}" '
-                    f'{url_attrs(item, link)}>{inner}</a></li>'
+                return (
+                    f'<li class="md-home__logo-item"{hidden}><a class="md-home__logo" '
+                    f"{url_attrs(item, link)}{skip}>{inner}</a></li>"
                 )
-            else:
-                cells.append(
-                    f'<li class="md-home__logo-item"><span class="{classes_}" '
-                    f'data-home-index="{index}">{inner}</span></li>'
-                )
+            return (
+                f'<li class="md-home__logo-item"{hidden}><span class="md-home__logo" '
+                f'data-home-index="{index}">{inner}</span></li>'
+            )
 
-        row = f'<ul class="md-home__logos-list" role="list">{"".join(cells)}</ul>'
+        cells = [cell(index, item) for index, item in enumerate(items)]
         if style == "marquee":
+            # Both periods live on ONE flex line -- that is the whole fix.  With
+            # each period wrapped in its own box, the space between the two boxes
+            # is distributed separately from the space between the logos, so the
+            # two can never agree; a single line distributes one free space across
+            # every junction at once, the seam included.
+            loop = cells + [cell(index, item, copy=True) for index, item in enumerate(items)]
             row = (
                 '<div class="md-home__marquee md-home__marquee--logos">'
                 '<div class="md-home__marquee-track">'
-                f'<div class="md-home__marquee-item">{row}</div>'
-                f'<div class="md-home__marquee-item" aria-hidden="true">{row}</div>'
+                f'<ul class="md-home__logos-list" role="list">{"".join(loop)}</ul>'
                 "</div></div>"
             )
+        else:
+            row = f'<ul class="md-home__logos-list" role="list">{"".join(cells)}</ul>'
 
         wrapper = (
             f'<div class="md-home__logos md-home__logos--{esc(style)}'

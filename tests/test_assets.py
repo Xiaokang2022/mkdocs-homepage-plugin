@@ -261,6 +261,51 @@ def split_selector_list(selector: str) -> list[str]:
     return parts
 
 
+def last_compound(part: str) -> str:
+    """The final compound selector, ignoring whitespace inside `()`.
+
+    A naive `split()` tears `:is(:hover, :focus-visible)` apart at its own space,
+    which silently reported the hover rule as having no subject at all.
+    """
+    depth = 0
+    start = 0
+    for index, char in enumerate(part):
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif depth == 0 and (char.isspace() or char in ">+~"):
+            start = index + 1
+    return part[start:].strip()
+
+
+def subject_classes(part: str) -> set[str]:
+    """The classes of the element a selector *matches*, if it is a plain one.
+
+    What decides whether an `opacity` reaches an image is whether the rule's
+    subject is one of the image's ancestors -- not whether the class happens to be
+    mentioned somewhere in the selector.  `.md-home__logo .md-icon` mentions
+    `.md-home__logo` but matches the mark, and dimming the mark does not dim the
+    picture next to it.
+    """
+    tail = re.sub(r"::?[a-z-]+(\([^()]*\))?", "", last_compound(part))
+    return set(re.findall(r"\.[\w-]+", tail))
+
+
+def test_the_subject_reader_is_not_vacuous():
+    assert subject_classes(".md-home__logo") == {".md-home__logo"}
+    assert subject_classes(".md-home__logs .md-home__logo:hover") == {".md-home__logo"}
+    assert subject_classes(".md-home__logo .md-icon") == {".md-icon"}
+    assert subject_classes("li.md-home__logo-item") == {".md-home__logo-item"}
+    assert subject_classes(".a::after") == {".a"}
+    assert subject_classes("img") == set()
+    # A space inside `:is()` is not a descendant combinator.
+    assert subject_classes(".md-typeset .md-home .md-home__logo:is(:hover, :focus-visible)") == {
+        ".md-home__logo"
+    }
+    assert subject_classes(".a > .b") == {".b"}
+
+
 def requires(selector: str, state: str) -> bool:
     """Whether the selector *needs* `state`, as opposed to ruling it out.
 
@@ -658,6 +703,245 @@ def test_a_transition_is_declared_on_the_resting_rule_not_on_hover():
     assert resting and any("transition" in body for body in resting), (
         "the feature icon's transition is not on its resting rule"
     )
+
+
+# -- the marquee loop -------------------------------------------------------
+def test_the_marquee_shift_is_exactly_one_period():
+    """`translateX(-50%)` is only seamless if half the track *is* one period.
+
+    Which needs the track to be symmetric: any spacing that sits between the two
+    periods rather than inside them makes `-50%` land short.  The demo measured
+    1454px needed against 1438px delivered -- a 16px jump every cycle, i.e. half
+    of the 32px `gap` that used to sit on the track.
+    """
+    tracks = [
+        rule
+        for rule in css_rules()
+        if subject_classes(rule[1]) == {".md-home__marquee-track"}
+    ]
+    assert tracks, "the marquee track is gone"
+    # No rule may put a gap on the track -- not the base one, not a hover one.
+    for _, selector, body in tracks:
+        assert declared(body, "gap") == "", (
+            f"{selector!r} has a gap on the track: it belongs to one period, not between two"
+        )
+
+    geometry = [rule for rule in tracks if declared(rule[2], "animation")]
+    assert geometry, "the track is no longer animated"
+    for _, selector, body in geometry:
+        assert declared(body, "min-width") == "200%", (
+            f"{selector!r} must be at least two viewports wide, or the right-hand side runs "
+            "out of content before the loop ends"
+        )
+        assert declared(body, "justify-content") == "space-around", (
+            f"{selector!r} must use `space-around`: it is the only distribution whose "
+            "end spaces add up to exactly one junction, which is what the wrap needs"
+        )
+
+    keyframe = [
+        rule for rule in css_rules() if rule[0].endswith("md-home-marquee") and rule[1] == "to"
+    ]
+    assert keyframe, "the marquee keyframe is gone"
+    assert declared(keyframe[0][2], "transform") == "translateX(-50%)", keyframe[0][2]
+
+
+def test_every_marquee_period_carries_its_own_half_gap():
+    """Both periods have to be padded identically, on both sides."""
+    half = "calc(var(--md-home-marquee-gap) / 2)"
+    periods = [
+        rule
+        for rule in css_rules()
+        if subject_classes(rule[1]) & {".md-home__marquee-item", ".md-home__logo-item"}
+        and declared(rule[2], "padding-inline")
+    ]
+    assert periods, "no marquee period declares a padding"
+    for _, selector, body in periods:
+        assert declared(body, "padding-inline") == half, f"{selector}: {body}"
+        assert declared(body, "margin-inline") == "", (
+            f"{selector!r} spaces a period with a margin, which collapses and breaks the loop"
+        )
+        assert declared(body, "flex") == "0 0 auto", (
+            f"{selector!r} must not grow: a grown period puts its free space at its own edge, "
+            "so the seam stops matching the logos inside"
+        )
+
+
+def test_the_gap_token_the_periods_read_is_declared_where_they_can_see_it():
+    declared_tokens = {
+        name
+        for _, selector, body in css_rules()
+        if subject_classes(selector) <= {".md-home__marquee", ".md-home"}
+        for name in re.findall(r"(--md-home-marquee-gap)\s*:", body)
+    }
+    assert declared_tokens, "the marquee gap token is not declared on the marquee or its root"
+
+
+def test_the_logos_list_is_the_one_flex_line():
+    """A wrapper per period is what makes the seam and the logos disagree.
+
+    The row is a single flex line holding both periods, so one `space-around`
+    governs every junction at once -- the seam included.
+    """
+    rows = [
+        (selector, body)
+        for _, selector, body in css_rules()
+        if "md-home__logos--marquee" in selector and "md-home__logos-list" in selector
+    ]
+    assert rows, "the marquee row lost its rule"
+    for selector, body in rows:
+        assert declared(body, "flex-wrap") == "nowrap", selector
+        assert declared(body, "gap") == "0", (
+            f"{selector!r} keeps a gap on the line: the spacing has to come from the periods' "
+            "own half-paddings, or the seam gets a second, different gap"
+        )
+
+
+def test_the_marquee_row_beats_the_base_list_rule():
+    """`flex-wrap: nowrap` used to lose 0,2,0 against 0,3,0 and nothing said so.
+
+    The "marquee" was quietly a wrapping row, and its measured width was inflated
+    by 200px.  A rule that overrides a property has to out-score the rule it
+    overrides, or the override is dead code.
+    """
+    base = [
+        (selector, body)
+        for _, selector, body in css_rules()
+        if "md-home__logos-list" in selector and declared(body, "flex-wrap") == "wrap"
+    ]
+    assert base, "the base list rule no longer sets flex-wrap"
+    base_score = max(specificity(selector) for selector, _ in base)
+    for _, selector, body in css_rules():
+        if "md-home__logos--marquee" not in selector or "md-home__logos-list" not in selector:
+            continue
+        for prop in ("flex-wrap", "gap"):
+            if declared(body, prop):
+                assert specificity(selector) >= base_score, (
+                    f"{selector!r} sets `{prop}` at {specificity(selector)} against the base "
+                    f"rule's {base_score}, so the base wins and the marquee silently wraps"
+                )
+
+
+# -- logo images ------------------------------------------------------------
+def test_an_image_logo_is_a_circle():
+    rules = [rule for rule in css_rules() if "md-home__logo img" in rule[1]]
+    assert rules, "the image logo lost its rule"
+    for _, selector, body in rules:
+        assert declared(body, "border-radius") == "50%", f"{selector}: {body}"
+        assert declared(body, "object-fit") == "cover", selector
+        assert declared(body, "aspect-ratio") in ("1", "1 / 1"), (
+            f"{selector!r} must square the box, or a wide image becomes an ellipse "
+            "instead of a circle"
+        )
+        assert declared(body, "width") == "var(--md-home-logo-size, 1.9em)", selector
+
+
+def test_an_image_logo_keeps_its_own_colours():
+    """Greyscale is gone, and no `colored` rule may reach an image."""
+    css = re.sub(r"/\*.*?\*/", "", read(CSS), flags=re.S)
+    assert "grayscale" not in css, "an image logo is being greyed out again"
+    touched = [
+        selector
+        for _, selector, _ in css_rules()
+        if "colored" in selector and re.search(r"\bimg\b", selector)
+    ]
+    assert not touched, f"`colored` must not touch an image logo: {touched}"
+
+
+def test_nothing_dims_an_image_through_an_ancestor():
+    """`opacity` and `filter` multiply down onto descendants.
+
+    A wrapper `opacity` on `.md-home__logo` therefore reached the picture, which
+    is how `colored` used to change an image's appearance no matter what the
+    option said.  Dimming the parts (`.md-icon`, `.md-home__logo-name`) is
+    deliberate; dimming a container of the image is not.
+    """
+    ancestors = {
+        ".md-home__logo",
+        ".md-home__logo-item",
+        ".md-home__logo-mark",
+        ".md-home__logos",
+    }
+    offenders = []
+    for _, selector, body in css_rules():
+        if ".md-home__logo img" in selector:
+            continue
+        for part in split_selector_list(selector):
+            if not subject_classes(part) & ancestors:
+                continue
+            for prop in ("opacity", "filter"):
+                if declared(body, prop):
+                    offenders.append((part.strip(), prop, declared(body, prop)))
+    assert not offenders, (
+        "these rules dim an ancestor of the picture, so a brand file is rendered faded "
+        f"however `colored` is set: {offenders}"
+    )
+
+
+def test_the_dimming_lands_on_the_parts_instead():
+    for cls in (".md-home__logo .md-icon", ".md-home__logo-name"):
+        assert any(
+            subject_classes(part) and declared(body, "opacity")
+            for _, selector, body in css_rules()
+            for part in split_selector_list(selector)
+            if cls in part
+        ), f"{cls} is no longer dimmed, so the strip reads at full strength by default"
+
+
+def test_colored_recolours_the_marks_and_leaves_the_images_alone():
+    """`colored` has to mean something, and what it means has to stop at the file.
+
+    The icon marks are `currentColor`, so the option can colour them; an image
+    carries its own palette and the option may not touch it.  Both halves are
+    asserted, because "does nothing to images" is only half the contract -- it
+    used to do nothing to the marks either, which made the option dead code.
+    """
+    marks = [
+        (selector, body)
+        for _, selector, body in css_rules()
+        if "colored" in selector and "md-icon" in selector
+    ]
+    assert marks, "`colored` no longer reaches the icon marks"
+    assert any(declared(body, "color") == "var(--md-home-accent)" for _, body in marks), marks
+
+    for _, selector, body in css_rules():
+        if "colored" not in selector:
+            continue
+        assert not re.search(r"\bimg\b", selector), (
+            f"`colored` must not reach an image logo, but {selector!r} does"
+        )
+        assert not declared(body, "filter"), f"{selector!r} filters something"
+
+
+def test_the_strip_does_not_inherit_the_sites_link_colour():
+    """A linked logo is an `<a>`, and Material sizes its own link rule to win.
+
+    `.md-typeset a` is (0,1,1); a bare `.md-home__logo` (0,1,0) loses to it, so
+    every linked logo rendered in `--md-typeset-a-color` and the "muted, then
+    accent on hover" design silently never applied to the common case.  Both the
+    resting colour and the hover accent therefore have to be re-stated on a prefix
+    that beats the theme's link rule.
+    """
+    link_colour = specificity(".md-typeset a")
+    logo_rules = [
+        (selector, body)
+        for _, selector, body in css_rules()
+        for part in split_selector_list(selector)
+        if subject_classes(part) == {".md-home__logo"} and declared(body, "color")
+    ]
+    assert len(logo_rules) >= 2, (
+        "the strip no longer states both its resting colour and its hover accent: "
+        f"{logo_rules}"
+    )
+    for selector, body in logo_rules:
+        score = max(
+            specificity(part)
+            for part in split_selector_list(selector)
+            if subject_classes(part) == {".md-home__logo"}
+        )
+        assert score >= link_colour, (
+            f"{selector!r} scores {score} against the theme's link rule {link_colour}, so "
+            "Material's link colour wins and this declaration is dead"
+        )
 
 
 # -- behaviours a future edit could quietly drop ---------------------------

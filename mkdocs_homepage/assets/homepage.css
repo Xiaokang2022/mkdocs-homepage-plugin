@@ -2082,24 +2082,49 @@
 
 .md-home__logo {
   align-items: center;
-  color: var(--md-default-fg-color--light);
   display: inline-flex;
   gap: 0.5em;
-  opacity: 0.62;
   text-decoration: none;
-  transition: opacity 0.3s var(--md-home-ease), color 0.3s var(--md-home-ease),
-    filter 0.3s var(--md-home-ease);
 }
 
-/* Grayscale is what makes a logo wall read as a wall and not as a rainbow; it
-   only affects image logos, since icon marks are monochrome already. */
+/* The strip follows the block's palette, not the site's link colour.
+
+   Most logos are `<a>` tags, and Material's `.md-typeset a` (0,1,1) out-scores a
+   bare `.md-home__logo` (0,1,0).  So every *linked* logo quietly rendered in
+   `--md-typeset-a-color` -- a blue -- and the whole "muted, then accent on hover"
+   design never happened for them.  A logo wall is chrome, not prose: it restates
+   its colour on a prefix that wins. */
+.md-typeset .md-home .md-home__logo {
+  color: var(--md-default-fg-color--light);
+}
+
+/* Dimming is applied to the *parts* rather than to the wrapper.
+
+   A wrapper `opacity` multiplies down onto everything, an image included -- so
+   `colored` could not be kept away from image logos no matter what the option
+   said, and a brand file the author chose was rendered at 62% opacity.  The text
+   and the icon marks are ours to fade; the image is not. */
+.md-home__logo .md-icon,
+.md-home__logo-name {
+  opacity: 0.62;
+  transition: opacity 0.3s var(--md-home-ease), color 0.3s var(--md-home-ease);
+}
+
+/* An image logo is a brand mark the author supplied, so it is drawn as a circle
+   in its own colours: no `filter`, no inherited `color`, no opacity of ours.
+   `colored` is about the marks *we* draw, and deliberately has no say here.
+
+   The box is square and the picture covers it, so a square source is untouched
+   and anything else is centre-cropped -- which is what a circle needs.  Say so
+   in the docs: a wide wordmark would lose its ends. */
 .md-home__logo img {
+  aspect-ratio: 1;
+  border-radius: 50%;
   display: block;
-  filter: grayscale(1);
   height: auto;
   margin: 0;
-  max-height: var(--md-home-logo-size, 1.9em);
-  width: auto;
+  object-fit: cover;
+  width: var(--md-home-logo-size, 1.9em);
 }
 
 .md-home__logo-mark {
@@ -2115,17 +2140,28 @@
   white-space: nowrap;
 }
 
-.md-home__logo:is(:hover, :focus-visible) {
+/* Same prefix as the resting colour, or the hover accent would lose to it. */
+.md-typeset .md-home .md-home__logo:is(:hover, :focus-visible) {
+  color: var(--md-home-accent);
+}
+
+.md-home__logo:is(:hover, :focus-visible) .md-icon,
+.md-home__logo:is(:hover, :focus-visible) .md-home__logo-name {
+  opacity: 1;
+}
+
+/* `colored` is about the marks *we* draw: the icon marks are `currentColor`, so
+   this is the option that decides whether they read as theme text or as the
+   accent.  Image logos are deliberately absent from these rules -- a brand file
+   the author supplied is already in full colour, and an option named "colored"
+   has no business changing it either way. */
+.md-home__logos--colored .md-home__logo .md-icon {
   color: var(--md-home-accent);
   opacity: 1;
 }
 
-.md-home__logo:is(:hover, :focus-visible) img {
-  filter: none;
-}
-
-.md-home__logos--colored .md-home__logo {
-  opacity: 0.85;
+.md-home__logos--colored .md-home__logo-name {
+  opacity: 0.95;
 }
 
 .md-home__logos--grid .md-home__logos-list {
@@ -2143,8 +2179,26 @@
   width: 100%;
 }
 
-.md-home__marquee--logos .md-home__logos-list {
+/* The marquee's list *is* the flex line: every logo of both periods is a direct
+   child of it, so one `space-around` governs every junction -- including the
+   seam between the periods.  Distributing the logos anywhere else (two lists, a
+   wrapper per period) is what makes the seam and the inner gaps disagree.
+
+   The specificity has to reach `.md-typeset .md-home .md-home__logos-list`
+   (0,3,0) to override `flex-wrap: wrap` and the `gap`: a bare
+   `.md-home__marquee--logos .md-home__logos-list` (0,2,0) lost to it, so the
+   "marquee" was secretly a wrapping row, and its measured width was inflated by
+   200px. */
+.md-typeset .md-home .md-home__logos--marquee .md-home__logos-list {
+  flex: 1 0 auto;
   flex-wrap: nowrap;
+  gap: 0;
+  justify-content: space-around;
+}
+
+.md-typeset .md-home .md-home__logos--marquee .md-home__logo-item {
+  flex: 0 0 auto;
+  padding-inline: calc(var(--md-home-marquee-gap) / 2);
 }
 
 /* ==========================================================================
@@ -2260,7 +2314,24 @@
   animation: md-home-shimmer var(--md-home-anim-duration, 5s) linear infinite;
 }
 
+/* A marquee is a periodic strip: the track holds the same content twice, so
+   shifting it by exactly half a track maps copy 1 onto copy 2 and the loop can
+   restart without a seam.  Both of those words -- "exactly" and "twice" -- are
+   load-bearing, and the original implementation got both wrong:
+
+   - `gap` on the track is spacing *between* the two halves, so half a track is
+     half a gap short of one period.  Measured on the demo: 1454px needed,
+     1438px delivered, i.e. a visible 16px jump every 22s.  A gap that belongs
+     to a period has to be inside the period, so each copy carries half of it as
+     padding and the halves meet for exactly one gap.
+   - a track narrower than twice the viewport runs out of content before the
+     loop ends, which is what left the right-hand side blank for the whole
+     cycle.  `min-width: 200%` makes "twice" true no matter how short the list
+     is; `space-around` (not `space-evenly`) then spreads the leftover evenly,
+     because a loop needs the space at the two ends to add up to exactly one
+     junction -- `space-around` is the only distribution that does that. */
 .md-home__marquee {
+  --md-home-marquee-gap: 2em;
   overflow: hidden;
   position: relative;
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
@@ -2269,20 +2340,27 @@
 
 .md-home__marquee-track {
   display: flex;
-  gap: 2em;
+  justify-content: space-around;
+  min-width: 200%;
   width: max-content;
   animation: md-home-marquee var(--md-home-anim-duration, 22s) linear infinite;
   animation-delay: var(--md-home-anim-delay, 0s);
+}
+
+/* One period, with its own gap built in: half a gap on each side, so two
+   periods in a row are spaced exactly like two logos inside one period. */
+.md-home__marquee-item {
+  flex: 0 0 auto;
+  padding-inline: calc(var(--md-home-marquee-gap) / 2);
 }
 
 .md-home__marquee:hover .md-home__marquee-track {
   animation-play-state: paused;
 }
 
-.md-home__marquee-item {
-  flex: 0 0 auto;
-}
-
+/* -50% is exact *because* the track is symmetric: two identical periods, each
+   carrying its own half-gaps.  Do not add a `gap` to the track -- it is the one
+   thing that turns this from a seamless loop into a 16px jump per cycle. */
 @keyframes md-home-marquee {
   from {
     transform: translateX(0);
