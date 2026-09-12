@@ -57,8 +57,10 @@ note: 装完即用，不需要额外的主题补丁。
 | `card_style` | `elevated`（默认）`outlined` `filled` `glass` `plain` |
 | `link_text` | 页脚文案的默认值 |
 
-单张卡片：`title` / `desc` / `icon` / `link` / `link_text` / `badge` / `tags` /
+单张卡片：`title` / `link` / `desc` / `icon` / `link_text` / `badge` / `tags` /
 `meta` / `theme` / `image` + `ratio` / `span: 2` / `featured` / `class` / `external`。
+
+卡片上的 `image:` 是**封面图**（见下），所以卡片的圆形成员标记用 `icon:` 写图片路径。
 
 ```homepage-cards
 columns: 3
@@ -78,6 +80,14 @@ cards:
     desc: "span: 2 或 featured: true 让它占两列"
     span: 2
     theme: amber
+  - title: 图片标记
+    icon: ../assets/mark-orbit.svg
+    desc: "icon: 指向图片文件时裁成圆形，并保留原色"
+    theme: teal
+  - title: 图片标记
+    icon: ../assets/mark-orbit.svg
+    desc: 图标位置写图片路径就是圆形图片，原色保留
+    link: /guide/
 ```
 
 ## showcase
@@ -133,6 +143,9 @@ features:
     icon: lightning-bolt-outline
     desc: "icon_style: solid"
     theme: cyan
+  - title: 用图片
+    icon: ../assets/mark-orbit.svg
+    desc: "icon: 指向图片文件时，气泡让位，图片按圆形填满整格"
 ```
 
 ## testimonials
@@ -297,25 +310,27 @@ icon: information-outline
 `value` 里的前缀与后缀会自动分离，例如 `98.6%` 只对 `98.6` 做动画。
 
 ```homepage-stats
-columns: 4
+columns: 3
 stats:
   - 16 | 区块类型 | view-dashboard-outline
   - 95 | 内置图标 | shape-outline
   - "99.9% | 可用性 | check-circle-outline"
   - "< 1s | 构建增量 | speedometer"
+  - 2 | 配色方案 | layers-outline
+  - 3.4 | 评分 | ../assets/mark-orbit.svg
 ```
 
 ## steps
 
-`steps` 列表：`title` / `desc` / `icon` / `link` / `theme`；
+`steps` 列表：`title` / `link` / `desc` / `icon` / `theme`；
 `direction`（`vertical` / `horizontal`）、`numbered`。
 
 ```homepage-steps
 direction: horizontal
 steps:
-  - 安装 | index.md | download-outline
-  - 编写 | syntax.md | text-box-outline
-  - 预览 | ../reference/index.md | console
+  - 安装 | index.md | 一条命令 | download-outline
+  - 编写 | syntax.md | 围栏里写属性 | text-box-outline
+  - 预览 | ../reference/index.md | 本地实时刷新 | console
 ```
 
 ## links
@@ -327,9 +342,9 @@ steps:
 style: buttons
 columns: 3
 links:
-  - 指南 | index.md | book-open-page-variant-outline
-  - 语法 | syntax.md | text-box-outline
-  - 设计 | ../reference/index.md | palette-outline
+  - 指南 | index.md | 从零开始 | book-open-page-variant-outline
+  - 语法 | syntax.md | 属性与正文 | text-box-outline
+  - 设计 | ../reference/index.md | 样式约定 | palette-outline
 ```
 
 ## cta
@@ -375,3 +390,34 @@ effect: typetext
 ```homepage-divider
 style: dots
 ```
+
+## 图标与图片
+
+**每个画图标的位置都可以写图片路径。** 两者用的是**同一个键** `icon:`，靠扩展名区分：
+
+```yaml
+icon: rocket-launch-outline      # 图标名 -> 单色字形，由主题着色
+icon: ../assets/logo.svg         # 图片路径 -> 圆形图片，保留原色
+```
+
+同样的写法适用于所有图标位：`hero` 的按钮与要点、`cards`、`features`、`stats`、`steps`、
+`links`、`showcase` 的要点列表、`text`，以及 `logos`（那里另有历史更久的 `image:` 键）。
+
+| | 图标名 | 图片路径 |
+| --- | --- | --- |
+| 外形 | 原样 | 裁成**圆形** |
+| 颜色 | 由主题着色（强调色 / 文字色） | **图片自己的颜色** |
+| 大小 | 该位置为图标留的尺寸 | 气泡类位置**填满整个气泡**，其余同上 |
+| 气泡 | 保留浅底与描边 | 气泡让位（正方形底衬套在圆形图片后面看着像一圈） |
+| 无障碍 | 有配套文字时视为装饰 | 有 `alt:` 时用它，否则为空 |
+
+几条要知道的：
+
+- **用正方形图片。** 正方形原样呈现，其它比例会居中裁切——16:9 的截图放进去会掉两边。
+- **气泡位置会把图片放大到整个气泡**（卡片图标 2.25em、特性图标 2.4em、步骤序号 2em），
+  比字形大一圈：一个徽标要看清需要比一条线段更多的空间，而布局属于那个位置，所以其它
+  东西不会挪动。
+- **扩展名是唯一的判据**，所以图标名里不能有点——内置的两套图标（95 个）都不含点，
+  测试会钉住这一点。
+- 图片路径同样由插件按 MkDocs 的规则解析（`../assets/x.svg` 相对**当前页面**），
+  写错会被构建测试抓出来，而不是在线上变成一张裂图。

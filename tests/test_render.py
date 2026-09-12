@@ -31,12 +31,208 @@ SAMPLES = {
     "divider": '```homepage-divider\nstyle: dots\n```',
 }
 
+#: Every slot in the widget that draws one small mark, and the shortest source
+#: that reaches it.  The list is deliberately exhaustive: "everywhere an icon is
+#: allowed a picture is allowed too" is only true if there is no slot missing
+#: from here, so a new icon slot has to be added to this table.
+MARK_SLOTS = {
+    "cards": "```homepage-cards\ncards:\n  - title: A\n    icon: /a.svg\n```",
+    "features": "```homepage-features\nfeatures:\n  - title: A\n    icon: /a.svg\n```",
+    "stats": "```homepage-stats\nstats:\n  - 1 | one | /a.svg\n```",
+    "steps": "```homepage-steps\nsteps:\n  - A | /x/ | desc | /a.svg\n```",
+    "links": "```homepage-links\nlinks:\n  - A | /x/ | desc | /a.svg\n```",
+    "showcase-bullet": (
+        "```homepage-showcase\nshowcase:\n  - title: A\n    image: /b.svg\n"
+        "    features:\n      - id: x\n        icon: /a.svg\n```"
+    ),
+    "hero-actions": "```homepage-hero\ntitle: T\nactions:\n  - A | /x/ | primary | /a.svg\n```",
+    "hero-highlights": "```homepage-hero\ntitle: T\nhighlights:\n  - 1 | one | /a.svg\n```",
+    "cta-actions": "```homepage-cta\ntitle: T\nactions:\n  - A | /x/ | primary | /a.svg\n```",
+    "text": "```homepage-text\nicon: /a.svg\n---\nprose\n```",
+    "logos-icon": "```homepage-logos\nlogos:\n  - icon: /a.svg\n    name: A\n```",
+    "logos-image": "```homepage-logos\nlogos:\n  - image: /a.svg\n    name: A\n```",
+}
+
 
 @pytest.mark.parametrize("kind", sorted(SAMPLES))
 def test_every_kind_renders_without_an_error_marker(kind):
     html = render(SAMPLES[kind])
     assert f"md-home--{kind}" in html
     assert "md-home--error" not in html
+
+
+# -- icons and pictures are interchangeable --------------------------------
+@pytest.mark.parametrize("slot", sorted(MARK_SLOTS))
+def test_every_icon_slot_takes_a_picture(slot):
+    """One key carries either, so every slot takes a picture the same way.
+
+    ``icon:`` is the key that means "the small mark here", and a value with a
+    picture extension is a file.  A slot that only understands glyph names would
+    make an author with a logo file hunt for a substitute glyph, which is the
+    whole point of the feature.
+    """
+    html = render(MARK_SLOTS[slot])
+    assert "md-home--error" not in html
+    assert '<img class="md-home__mark-img" src="/a.svg"' in html, html[:400]
+
+
+@pytest.mark.parametrize("slot", sorted(MARK_SLOTS))
+def test_the_same_key_still_takes_a_glyph(slot):
+    """The positive control: the picture path must not have replaced the glyph.
+
+    Every source above is the same block with the mark swapped, so if a slot
+    stopped drawing icons this would catch it -- and if the *discriminator* were
+    broken (everything treated as a picture) the test above would pass on its own.
+    """
+    source = MARK_SLOTS[slot].replace("/a.svg", "rocket-launch-outline")
+    # A slot reached through the explicit `image:` key wants that key swapped too,
+    # because `image:` is *meant* to stay a picture whatever it holds.
+    source = source.replace("image: rocket-launch-outline", "icon: rocket-launch-outline")
+    html = render(source)
+    assert "md-home--error" not in html
+    assert "md-home__mark-img" not in html, html[:400]
+    assert "<svg" in html
+
+
+def test_a_dot_is_what_makes_an_icon_value_a_picture():
+    """The discriminator, at the value level, including the near misses."""
+    from mkdocs_homepage.util import is_image_ref
+
+    assert is_image_ref("assets/logo.svg")
+    assert is_image_ref("/logo.png")
+    assert is_image_ref("https://example.com/a.webp")
+    assert is_image_ref("logo.svg?v=2")  # a query string is not an extension
+    assert is_image_ref("logo.svg#frag")
+
+    assert not is_image_ref("simple/github")  # a slash is not a dot
+    assert not is_image_ref("rocket-launch-outline")
+    assert not is_image_ref("check-circle-outline")
+    assert not is_image_ref("")
+    assert not is_image_ref(None)
+    assert not is_image_ref("logo")  # a bare name has no extension
+    assert not is_image_ref("assets/logo")  # ...even in a directory
+
+
+def test_a_decorative_mark_gets_an_empty_alt_and_a_labelled_one_does_not():
+    """`alt` admits to guessing otherwise.
+
+    A card icon sits beside the card's own title, so an alt that fell back to
+    `title:` made a screen reader read the heading twice.  Blank means decorative.
+    """
+    card = render("```homepage-cards\ncards:\n  - title: Hello\n    icon: /a.svg\n```")
+    assert 'alt=""' in card, card[:400]
+
+    logo = render("```homepage-logos\nlogos:\n  - icon: /a.svg\n    name: Acme\n```")
+    assert 'alt="Acme"' in logo
+
+    explicit = render("```homepage-features\nfeatures:\n  - title: A\n    icon: /a.svg\n    alt: 说明\n```")
+    assert 'alt="说明"' in explicit
+
+
+def test_a_picture_is_never_reported_as_an_unknown_icon(caplog):
+    """The name validator must not see a path -- that warning would be noise."""
+    with caplog.at_level(logging.WARNING, logger="mkdocs.plugins.homepage"):
+        render("```homepage-cards\ncards:\n  - title: A\n    icon: /a.svg\n```")
+    assert "unknown icon" not in caplog.text
+
+
+def test_a_move_kind_of_value_is_still_treated_as_a_glyph(caplog):
+    """Positive control for the check above: a typo must still be reported."""
+    with caplog.at_level(logging.WARNING, logger="mkdocs.plugins.homepage"):
+        render("```homepage-cards\ncards:\n  - title: A\n    icon: not-a-real-icon\n```")
+    assert "unknown icon" in caplog.text
+
+
+# -- the compact `|` form --------------------------------------------------
+#: The order the docs promise, and the blocks that honour it, as
+#: ``kind: (source, the text the first field carries)``.
+LINK_LIKE = {
+    "cards": (
+        "```homepage-cards\ncards:\n  - Card | /c/ | Desc | rocket-launch-outline\n```",
+        "Card",
+    ),
+    "features": (
+        "```homepage-features\nfeatures:\n  - Feat | /f/ | Desc | rocket-launch-outline\n```",
+        "Feat",
+    ),
+    "steps": (
+        "```homepage-steps\nsteps:\n  - Step | /s/ | Desc | rocket-launch-outline\n```",
+        "Step",
+    ),
+    "links": (
+        "```homepage-links\nlinks:\n  - Link | /l/ | Desc | rocket-launch-outline\n```",
+        "Link",
+    ),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(LINK_LIKE))
+def test_the_pipe_form_fills_the_same_fields_in_every_block(kind):
+    """`标题 | 链接 | 描述 | 图标` has to mean one thing, or nobody can remember it.
+
+    It used to mean something different per block: `links` had no `icon` field at
+    all, so the fourth value was dropped *and* the third landed in `desc` -- the
+    demo rendered `book-open-page-variant-outline` as the description text of a
+    link.  `steps` and `features` put `icon` in the third slot instead, so the
+    same line drew a different card depending on the fence it sat in.
+    """
+    source, title = LINK_LIKE[kind]
+    html = render(source)
+    assert "md-home--error" not in html
+    assert f"{title}<" in html, f"{kind}: the first field did not become the title"
+    assert ">Desc<" in html, f"{kind}: the description did not land in `desc`"
+    assert 'href="' in html, kind
+    # The icon is a glyph here, and it is drawn -- not printed.
+    assert "<svg" in html
+    assert "rocket-launch-outline" not in html, (
+        f"{kind}: the icon name leaked into the output as text"
+    )
+
+
+def test_the_pipe_form_reaches_the_action_icon():
+    """`文字 | 链接 | 样式 | 图标` -- actions have a required third field."""
+    html = render(
+        "```homepage-cta\ntitle: T\nactions:\n  - Go | /go/ | primary | rocket-launch-outline\n```"
+    )
+    assert 'md-button--primary' in html
+    assert "<svg" in html
+    assert "rocket-launch-outline" not in html
+
+
+def test_an_empty_pipe_field_does_not_shift_the_others():
+    """`A | /x/ | | icon` -- the description is optional, the icon is not lost."""
+    html = render("```homepage-links\nlinks:\n  - A | /x/ | | rocket-launch-outline\n```")
+    assert 'href="/x/"' in html
+    assert "<svg" in html
+    assert "rocket-launch-outline" not in html
+
+
+def test_the_field_tuples_are_named_constants_not_local_decisions():
+    """A per-block order is what let them drift apart in the first place.
+
+    Both orders are documented constants now, so the promise in the docs and the
+    behaviour in the code are the same object -- and the three orders that used to
+    be written inline (two of them wrong) cannot come back.
+    """
+    import inspect
+
+    from mkdocs_homepage import render as renderer
+
+    source = inspect.getsource(renderer)
+    assert renderer.LINK_FIELDS == ("title", "link", "desc", "icon")
+    assert renderer.ACTION_FIELDS == ("text", "link", "style", "icon")
+
+    for stale in (
+        '("text", "link", "desc", "icon")',
+        '("title", "desc", "icon", "link")',
+        '("text", "link", "desc")',
+        '("text", "link", "style")',
+    ):
+        assert stale not in source, f"{stale} is back; use the named constant"
+    assert source.count("LINK_FIELDS)") >= 4, "the link-like blocks stopped sharing the order"
+    assert source.count("ACTION_FIELDS)") >= 2, "the two action lists stopped sharing the order"
+
+
 
 
 def test_kinds_are_complete():
@@ -285,7 +481,7 @@ def test_logos_accept_images_too():
     html = render(
         "```homepage-logos\nlogos:\n  - image: /logo.svg\n    name: Acme\n    link: /\n```"
     )
-    assert '<img src="/logo.svg"' in html
+    assert '<img class="md-home__mark-img" src="/logo.svg"' in html
     assert "md-home__logo-name" in html
     assert "Acme" in html
 

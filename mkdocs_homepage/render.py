@@ -43,6 +43,7 @@ from .util import (
     css_ratio,
     esc,
     first_of,
+    is_image_ref,
     safe_url,
     split_pipe,
 )
@@ -50,7 +51,28 @@ from .util import (
 #: Every block carries `.md-home`; the kind adds `.md-home--<kind>`.
 ROOT = "md-home"
 
+#: The class on a picture that stands in for an icon.  One definition serves every
+#: slot: circular, sized by `--md-home-icon-size` like the glyph it replaces.
+MARK_IMAGE_CLASS = "md-home__mark-img"
+
 #: Animation names accepted by the ``anim`` block.
+#: The order the compact ``|`` form fills, shared by every link-like list.
+#:
+#: One order for all of them on purpose.  Each block used to declare its own and
+#: they disagreed -- `links` had no `icon` field at all, so the third value landed
+#: in `desc` and a documented `"title" | 链接 | 描述 | 图标` line rendered the icon's
+#: *name* as the description text, while `actions` dropped the field silently.  A
+#: per-block order is not something an author can remember; the tuple is the API.
+#:
+#: The first field is `title`, not `text`, because every consumer can read it:
+#: the link-like blocks ask for `title`, and `links`/`actions` ask for `text` with
+#: `title` as their next alias -- so one name serves all five.
+LINK_FIELDS = ("title", "link", "desc", "icon")
+
+#: Buttons carry the variant they are, so the third field is the style rather
+#: than the description: ``快速开始 | guide/ | primary | rocket-launch-outline``.
+ACTION_FIELDS = ("text", "link", "style", "icon")
+
 ANIM_EFFECTS = ("float", "pulse", "shimmer", "gradient", "marquee", "typetext")
 
 #: Shapes for the ``features`` icon bubble.
@@ -486,6 +508,51 @@ class BlockRenderer:
             body += f'<figcaption class="md-home__caption">{self.inline(caption)}</figcaption>'
         return body + "</figure>"
 
+    # -- one small mark, in any slot -------------------------------------
+    def _mark(
+        self,
+        item: Mapping[str, Any],
+        *,
+        label: str | None = None,
+        loading: str = "lazy",
+        picture_keys: Sequence[str] = (),
+    ) -> str:
+        """The mark for a slot that draws one: an icon, or a picture.
+
+        **Every slot that takes an icon takes a picture too.**  An author with a
+        logo file should not have to hunt for a substitute glyph, so the *same*
+        key carries either one -- ``icon: rocket-launch-outline`` is a glyph,
+        ``icon: assets/logo.svg`` is a file, and the extension is what tells them
+        apart (see :func:`~mkdocs_homepage.util.is_image_ref`).  Using one key
+        rather than a second one is what keeps the asymmetry out: a card already
+        spends ``image:`` on its cover, so a second picture key would have to mean
+        something different there than everywhere else.
+
+        The two differ in the ways that matter and nowhere else.  An icon is a
+        monochrome glyph tinted with the block's accent; a picture keeps its own
+        colours and is clipped to a circle.  Size, alignment and layout belong to
+        the slot, so swapping one for the other moves nothing.
+
+        ``picture_keys`` are extra keys a *specific* slot may spend on the
+        picture; it stays empty by default, which is what keeps ``image:`` and
+        ``avatar:`` meaning what they mean in the blocks that already use them.
+        """
+        value = item.get("icon")
+        source = value if is_image_ref(value) else (first_of(item, *picture_keys) if picture_keys else None)
+        if not source:
+            return icon(value, label=label)
+        # Conservative on purpose: only the caller's label or an explicit `alt:`
+        # is used.  Falling back to `title`/`name` looked helpful and was not --
+        # a card icon sits right beside the card's own title, so its alt became a
+        # copy of the text next to it and a screen reader read the heading twice.
+        # Blank means decorative, which is what a mark in a labelled slot is.
+        return (
+            f'<img class="{MARK_IMAGE_CLASS}"'
+            f' src="{esc(safe_url(resolve_url(str(source))))}"'
+            f' alt="{esc(label or item.get("alt") or "")}"'
+            f' loading="{esc(loading)}" decoding="async">'
+        )
+
     def _actions(self, items: Iterable[Mapping[str, Any]]) -> str:
         parts = []
         for item in items:
@@ -495,7 +562,7 @@ class BlockRenderer:
                 continue
             kind = str(first_of(item, "style", "variant", default="secondary")).strip().lower()
             variant = "md-button--primary" if kind in ("primary", "solid", "filled") else ""
-            glyph = icon(item["icon"]) if item.get("icon") else ""
+            glyph = self._mark(item)
             label = self.inline(text) if text else ""
             button = classes("md-button", "md-home__action", variant)
             inner = f'{glyph}<span class="md-home__action-text">{label}</span>'
@@ -522,7 +589,7 @@ class BlockRenderer:
         body = self.block(block.body)
         if body:
             panes.append(f'<div class="md-home__lead md-home__prose md-typeset">{body}</div>')
-        actions = self._actions(as_items(props.get("actions"), ("text", "link", "style")))
+        actions = self._actions(as_items(props.get("actions"), ACTION_FIELDS))
         if actions:
             panes.append(f'<div class="md-home__actions">{actions}</div>')
         note = first_of(props, "note", "fineprint", "footnote")
@@ -569,7 +636,11 @@ class BlockRenderer:
         for item in items:
             value = first_of(item, "value", "text", "title")
             label = first_of(item, "label", "desc")
-            glyph = f'<span class="md-home__highlight-icon">{icon(item["icon"])}</span>' if item.get("icon") else ""
+            glyph = (
+                f'<span class="md-home__highlight-icon">{self._mark(item)}</span>'
+                if item.get("icon")
+                else ""
+            )
             cells.append(
                 '<li class="md-home__highlight">'
                 f"{glyph}"
@@ -581,7 +652,7 @@ class BlockRenderer:
     def _cards(self, block: Block) -> str:
         props = block.props
         presentation = self._presentation(block)
-        cards = as_items(first_of(props, "cards", "items"), ("title", "link", "desc", "icon"))
+        cards = as_items(first_of(props, "cards", "items"), LINK_FIELDS)
         if not cards:
             raise BlockError("a cards block needs a `cards:` list with at least one item")
 
@@ -646,7 +717,7 @@ class BlockRenderer:
             # The icon labels the card only when there is no title to do it.
             icon_label = None if title else (str(first_of(card, "alt", default="")) or "图标")
             glyph = (
-                f'<span class="md-home__card-icon">{icon(icon_name, label=icon_label)}</span>'
+                f'<span class="md-home__card-icon">{self._mark(card, label=icon_label)}</span>'
                 if icon_name
                 else ""
             )
@@ -729,7 +800,7 @@ class BlockRenderer:
             if bullets:
                 marks = "".join(
                     '<li class="md-home__bullet">'
-                    f'<span class="md-home__bullet-icon">{icon(first_of(bullet, "icon", default="check-circle-outline") or "check-circle-outline")}</span>'
+                    f'<span class="md-home__bullet-icon">{self._mark(bullet) or icon("check-circle-outline")}</span>'
                     f'<span>{self.inline(first_of(bullet, "text", "desc", "title"))}</span></li>'
                     for bullet in bullets
                 )
@@ -865,18 +936,20 @@ class BlockRenderer:
             """
             name = first_of(item, "name", "title", "text")
             link = first_of(item, "link", "url", "href")
-            image = first_of(item, "image", "img", "src")
             # In a marquee the whole point is that the pictures are about to be
             # scrolled into view, so `lazy` is wrong there: measured in the
             # browser, the second copy's image stayed at `complete: false` with a
             # 0x0 natural size until it happened to intersect, i.e. it popped in
             # mid-loop.  A row or a grid keeps `lazy` -- it may be far down a page.
             loading = "eager" if style == "marquee" else "lazy"
-            mark = (
-                f'<img src="{esc(safe_url(resolve_url(image)))}" alt="{esc(name or "")}"'
-                f' loading="{loading}" decoding="async">'
-                if image
-                else icon(item.get("icon"), label=name or None)
+            # A logo may name its picture either way: `image:` (the documented,
+            # long-standing key for this block) or an `icon:` that points at a
+            # file, which is how every other slot takes one.
+            mark = self._mark(
+                item,
+                label=name or None,
+                loading=loading,
+                picture_keys=("image", "img", "src"),
             )
             label = f'<span class="md-home__logo-name">{self.inline(name)}</span>' if name else ""
             inner = f'<span class="md-home__logo-mark">{mark}</span>{label}'
@@ -929,7 +1002,7 @@ class BlockRenderer:
         body = self.block(block.body)
         if body:
             panes.append(f'<div class="md-home__lead md-home__prose md-typeset">{body}</div>')
-        actions = self._actions(as_items(props.get("actions"), ("text", "link", "style")))
+        actions = self._actions(as_items(props.get("actions"), ACTION_FIELDS))
         if actions:
             panes.append(f'<div class="md-home__actions">{actions}</div>')
         note = first_of(props, "note", "fineprint", "footnote")
@@ -955,7 +1028,7 @@ class BlockRenderer:
     def _features(self, block: Block) -> str:
         props = block.props
         presentation = self._presentation(block)
-        features = as_items(first_of(props, "features", "items"), ("title", "desc", "icon", "link"))
+        features = as_items(first_of(props, "features", "items"), LINK_FIELDS)
         if not features:
             raise BlockError("a features block needs a `features:` list with at least one item")
 
@@ -972,7 +1045,7 @@ class BlockRenderer:
 
             parts = []
             if feature.get("icon"):
-                parts.append(f'<span class="md-home__feature-icon">{icon(feature["icon"])}</span>')
+                parts.append(f'<span class="md-home__feature-icon">{self._mark(feature)}</span>')
             if title:
                 parts.append(f'<p class="md-home__feature-title">{self.inline(title)}</p>')
             if desc:
@@ -1184,7 +1257,7 @@ class BlockRenderer:
         columns = props.get("columns")
         content = body
         if props.get("icon"):
-            content = f'{icon(props["icon"])}<div class="md-home__text-body">{body}</div>'
+            content = f'{self._mark(props)}<div class="md-home__text-body">{body}</div>'
         if as_bool(props.get("collapsible"), False):
             summary = self.inline(first_of(props, "summary", "title", default="展开"))
             content = f'<details class="md-home__details"><summary>{summary}</summary>{content}</details>'
@@ -1222,7 +1295,7 @@ class BlockRenderer:
             else:
                 value = f'<span class="md-home__stat-value">{self.inline(raw)}</span>'
             glyph = (
-                f'<span class="md-home__stat-icon">{icon(stat["icon"])}</span>'
+                f'<span class="md-home__stat-icon">{self._mark(stat)}</span>'
                 if stat.get("icon")
                 else ""
             )
@@ -1241,7 +1314,7 @@ class BlockRenderer:
     def _steps(self, block: Block) -> str:
         props = block.props
         presentation = self._presentation(block)
-        steps = as_items(first_of(props, "steps", "items"), ("title", "desc", "icon", "link"))
+        steps = as_items(first_of(props, "steps", "items"), LINK_FIELDS)
         if not steps:
             raise BlockError("a steps block needs a `steps:` list with at least one item")
 
@@ -1253,10 +1326,10 @@ class BlockRenderer:
         cells = []
         for index, step in enumerate(steps):
             theme = normalize_theme(step.get("theme"))
-            marker = (
-                icon(step["icon"])
-                if step.get("icon")
-                else (f'<span class="md-home__step-number">{index + 1}</span>' if numbered else "")
+            # A step marker is an icon *or* a number, and either may be replaced by
+            # a picture -- the marker slot is the same size whatever it holds.
+            marker = self._mark(step) or (
+                f'<span class="md-home__step-number">{index + 1}</span>' if numbered else ""
             )
             link = first_of(step, "link", "url", "href")
             title = first_of(step, "title", "heading")
@@ -1282,7 +1355,7 @@ class BlockRenderer:
     def _links(self, block: Block) -> str:
         props = block.props
         presentation = self._presentation(block)
-        links = as_items(first_of(props, "links", "items"), ("text", "link", "desc"))
+        links = as_items(first_of(props, "links", "items"), LINK_FIELDS)
         if not links:
             raise BlockError("a links block needs a `links:` list with at least one item")
 
@@ -1296,7 +1369,7 @@ class BlockRenderer:
             href = first_of(link, "link", "url", "href")
             desc = first_of(link, "desc", "description", "subtitle")
             theme = normalize_theme(link.get("theme"))
-            glyph = icon(link["icon"]) if link.get("icon") else ""
+            glyph = self._mark(link)
             inner = (
                 f'{glyph}<span class="md-home__link-body">'
                 f'<span class="md-home__link-text">{self.inline(text)}</span>'

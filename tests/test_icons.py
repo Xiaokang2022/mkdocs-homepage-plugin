@@ -118,6 +118,31 @@ def test_the_curated_set_is_fully_present():
     assert len(BRAND_PATHS) == len(generator.BRAND_NAMES)
 
 
+def test_no_icon_name_contains_a_dot():
+    """This is what makes ``icon: logo.svg`` unambiguous.
+
+    Every slot that takes an icon takes a picture too, and one key carries either
+    -- the *extension* is the whole discriminator (see
+    :func:`~mkdocs_homepage.util.is_image_ref`).  A single icon name with a dot in
+    it would turn that name into a broken `<img>`, so the sets have to stay
+    dot-free.  A slash cannot be used instead: brands are addressed
+    `simple/github`, and `three-dot-js` is a *name*, not a path.
+    """
+    from mkdocs_homepage.util import is_image_ref
+
+    for name in list(ICON_PATHS) + list(BRAND_PATHS):
+        assert "." not in name, (
+            f"the icon name {name!r} contains a dot, which now means \"this is a "
+            "picture file\" -- rename it or the address stops working"
+        )
+        assert not is_image_ref(name), f"{name!r} is mistaken for a picture"
+
+    # Positive control: the check above is only meaningful while a picture
+    # reference *is* something else.
+    assert is_image_ref("assets/logo.svg")
+    assert not is_image_ref("simple/github")
+
+
 # -- call sites ------------------------------------------------------------
 def test_every_literal_icon_call_site_is_declared():
     found = {}
@@ -148,7 +173,10 @@ def collect_icon_props(value, out):
 def test_every_icon_used_in_the_demo_is_declared():
     if not DEMO.is_dir():
         pytest.skip("no demo site in this checkout")
+    from mkdocs_homepage.util import is_image_ref
+
     used = {}
+    pictures = {}
     for path in sorted(DEMO.rglob("*.md")):
         text = path.read_text(encoding="utf-8")
         for segment in split_blocks(text, source=str(path)):
@@ -157,7 +185,11 @@ def test_every_icon_used_in_the_demo_is_declared():
             names = []
             collect_icon_props(segment.props, names)
             for name in names:
-                used.setdefault(name, []).append(f"{path.name}:{segment.line}")
+                # An `icon:` value may be a picture instead of a glyph name; the
+                # build test (`test_every_image_reference_resolves`) is what proves
+                # the file is really there.
+                target = pictures if is_image_ref(name) else used
+                target.setdefault(name, []).append(f"{path.name}:{segment.line}")
     assert used, "the demo uses no icons at all; this check would be vacuous"
     undeclared = {name: where for name, where in used.items() if name not in ICON_PATHS}
     assert not undeclared, f"the demo uses undeclared icons: {undeclared}"

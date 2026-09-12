@@ -23,6 +23,41 @@ _RATIO_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*[/:]\s*(\d+(?:\.\d+)?)$")
 #: URL schemes that must never end up in an ``href``/``src``.
 _SCHEME_RE = re.compile(r"^(?:javascript|vbscript|data|blob|file)\s*:", re.I)
 
+#: Picture formats an ``icon:`` value may point at instead of naming a glyph.
+IMAGE_SUFFIXES = frozenset(
+    {"svg", "png", "jpg", "jpeg", "webp", "gif", "avif", "bmp", "ico"}
+)
+
+
+def image_suffix(value: Any) -> str | None:
+    """The picture extension of a URL-ish string, lower-cased, or ``None``.
+
+    Query strings and fragments are dropped first, because
+    ``logo.svg?v=2`` is a picture too.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return None
+    tail = text.split("?", 1)[0].split("#", 1)[0]
+    name = tail.rpartition("/")[2]
+    if "." not in name:
+        return None
+    suffix = name.rpartition(".")[2].lower()
+    return suffix or None
+
+
+def is_image_ref(value: Any) -> bool:
+    """Whether an ``icon:`` value points at a picture rather than naming a glyph.
+
+    Every slot that draws an icon draws a picture too, and the most forgiving way
+    to say so is to let the *same* key take either: ``icon: rocket-launch-outline``
+    is a glyph, ``icon: assets/logo.svg`` is a file.  The extension is the whole
+    test -- a slash cannot be used, because icon sets address their marks as
+    ``simple/github``.  That is only unambiguous because **no bundled icon name
+    contains a dot**, which a test pins.
+    """
+    return image_suffix(value) in IMAGE_SUFFIXES
+
 
 def css_ratio(value: Any) -> str | None:
     """Validate an aspect ratio, returning it as ``"a / b"`` for CSS.

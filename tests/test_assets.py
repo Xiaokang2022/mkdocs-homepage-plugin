@@ -823,16 +823,41 @@ def test_the_marquee_row_beats_the_base_list_rule():
 
 # -- logo images ------------------------------------------------------------
 def test_an_image_logo_is_a_circle():
-    rules = [rule for rule in css_rules() if "md-home__logo img" in rule[1]]
-    assert rules, "the image logo lost its rule"
-    for _, selector, body in rules:
+    """The logo strip was the first slot to want a picture, not the only one.
+
+    The circle, the crop and the size now come from the shared
+    `.md-home__mark-img` rule; all this block adds is the size it wants.
+    """
+    marks = [rule for rule in css_rules() if ".md-home__mark-img" in rule[1]]
+    assert marks, "the shared picture-in-an-icon-slot rule is gone"
+    shape = [rule for rule in marks if declared(rule[2], "border-radius")]
+    assert shape, marks
+    for _, selector, body in shape:
         assert declared(body, "border-radius") == "50%", f"{selector}: {body}"
         assert declared(body, "object-fit") == "cover", selector
         assert declared(body, "aspect-ratio") in ("1", "1 / 1"), (
             f"{selector!r} must square the box, or a wide image becomes an ellipse "
             "instead of a circle"
         )
-        assert declared(body, "width") == "var(--md-home-logo-size, 1.9em)", selector
+        assert declared(body, "width") == "var(--md-home-icon-size, 1em)", (
+            f"{selector!r} must take the slot's size, or the picture and the glyph it "
+            "replaces would not line up"
+        )
+
+    # The logo sizes its mark with its own token, which is allowed -- it just has
+    # to feed the shared one rather than restate the picture's geometry.
+    logo_mark = [
+        rule
+        for rule in css_rules()
+        if subject_classes(rule[1]) == {".md-home__logo-mark"}
+        and declared(rule[2], "--md-home-icon-size")
+    ]
+    assert logo_mark, "the logo mark no longer sets the icon size"
+    for _, selector, body in logo_mark:
+        assert declared(body, "--md-home-icon-size") == "var(--md-home-logo-size, 1.9em)", selector
+        assert not declared(body, "border-radius"), (
+            f"{selector!r} restates the circle; there is one definition of it now"
+        )
 
 
 def test_an_image_logo_keeps_its_own_colours():
@@ -910,6 +935,75 @@ def test_colored_recolours_the_marks_and_leaves_the_images_alone():
             f"`colored` must not reach an image logo, but {selector!r} does"
         )
         assert not declared(body, "filter"), f"{selector!r} filters something"
+
+
+# -- a picture in a bubble --------------------------------------------------
+def test_a_bubble_holding_a_picture_drops_its_chrome():
+    """A tinted square behind a circle reads as a ring, so the fill goes.
+
+    The size becomes 100% at the same time, which is what fills the slot the slot
+    was given: a picture needs more room than a line glyph to be legible, and the
+    layout is the slot's, so nothing else moves.
+    """
+    bubbles = ("md-home__card-icon", "md-home__feature-icon", "md-home__step-marker")
+    rules = [
+        rule
+        for rule in css_rules()
+        if ".md-home__mark-img" in rule[1] and ":has(" in rule[1]
+    ]
+    assert rules, "a bubble no longer notices that it is holding a picture"
+    covered = set()
+    for _, selector, body in rules:
+        for bubble in bubbles:
+            if bubble in selector:
+                covered.add(bubble)
+        assert declared(body, "background") == "none", f"{selector!r} keeps its fill"
+        assert declared(body, "box-shadow") == "none", f"{selector!r} keeps its ring"
+        assert declared(body, "--md-home-icon-size") == "100%", (
+            f"{selector!r} must fill the slot, not the glyph's size"
+        )
+    assert covered == set(bubbles), f"these bubbles are not handled: {set(bubbles) - covered}"
+
+
+def test_the_bubble_chrome_rule_out_scores_the_rules_that_fill_a_bubble():
+    """A tie is settled by file order, and this rule lives near the top.
+
+    Measured in the browser: the feature bubble kept its tint while the card
+    bubble did not -- the icon-style rule that fills a feature bubble is (0,2,0),
+    which tied with the un-prefixed `:has()` rule, so the later declaration won.
+    Arithmetic is the only way to see this without a browser.
+    """
+    chrome = [
+        rule
+        for rule in css_rules()
+        if ".md-home__mark-img" in rule[1] and ":has(" in rule[1]
+    ]
+    assert chrome, "the bubble chrome rule is gone"
+    chrome_score = max(specificity(selector) for _, selector, _ in chrome)
+
+    fillers = []
+    for _, selector, body in css_rules():
+        if body is None or "md-home__mark-img" in selector:
+            continue
+        if not (declared(body, "background") or declared(body, "background-color")):
+            continue
+        for part in split_selector_list(selector):
+            # A pseudo-element paints itself, not the bubble, so it cannot fight
+            # the chrome rule -- the step marker's rail is `::after`.
+            if "::" in part:
+                continue
+            if subject_classes(part) & {
+                ".md-home__card-icon",
+                ".md-home__feature-icon",
+                ".md-home__step-marker",
+            }:
+                fillers.append((selector, specificity(part)))
+    assert fillers, "no rule fills a bubble; this check would be vacuous"
+    for selector, score in fillers:
+        assert score < chrome_score, (
+            f"the chrome rule scores {chrome_score} against {selector!r} at {score}; "
+            "unless it wins outright the tint stays"
+        )
 
 
 def test_the_strip_does_not_inherit_the_sites_link_colour():

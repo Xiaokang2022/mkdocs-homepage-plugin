@@ -176,6 +176,15 @@ icon: book-open-page-variant-outline   # Material Design Icons（默认，约 58
 icon: simple/github                    # Simple Icons 品牌标（约 30 个，logos 区块默认）
 ```
 
+**每个图标位都能改用图片**，共用一个键，靠扩展名区分：
+
+```yaml
+icon: ../assets/logo.svg               # 圆形，保留原色
+```
+
+字形由主题着色，图片保留自己的颜色并裁成圆形（所以请用正方形图片）；气泡位置（卡片
+图标 / 特性图标 / 步骤序号）会让出浅底与描边，把图片放大到填满整格。
+
 写错名字会输出警告并列出可用取值。`scripts/generate_icons.py` 负责重新生成，
 `tests/test_icons.py` 会逐 token 对比主题源码，防止拷错。
 

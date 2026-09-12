@@ -395,6 +395,58 @@
   width: var(--md-home-icon-size, 1em);
 }
 
+/* A picture standing in for an icon -- any slot, one definition.
+
+   Every slot that draws an icon draws a picture instead, and it is clipped to a
+   circle: a round mark sits beside a round glyph without the two fighting, and it
+   is the one shape that needs no assumption about the source's proportions.  A
+   square picture is untouched; anything else is centre-cropped, so a wide
+   wordmark loses its ends (documented, since that is a surprise an author cannot
+   see in the source).
+
+   The size comes from the same `--md-home-icon-size` the glyph reads, so swapping
+   one for the other moves nothing.  `object-fit: cover` is what makes the
+   crop deliberate rather than a distortion. */
+.md-typeset .md-home .md-home__mark-img {
+  aspect-ratio: 1;
+  border-radius: 50%;
+  display: inline-block;
+  flex: 0 0 auto;
+  height: auto;
+  margin: 0;
+  object-fit: cover;
+  vertical-align: -0.12em;
+  width: var(--md-home-icon-size, 1em);
+}
+
+/* A bubble that holds a picture gives up its chrome: the picture *is* the mark,
+   and a tinted square behind a circle reads as a ring.  Raising the size to 100%
+   is what fills the slot it was given, which is the point of a bubble -- an
+   avatar needs more room than a line glyph to be legible, and the layout is the
+   slot's, so nothing moves.
+
+   The `.md-typeset .md-home` prefix is not decoration.  Without it this scores
+   (0,2,0) -- a *tie* with `.md-home__feature--icon-circle .md-home__feature-icon`,
+   which fills the bubble -- and a tie is settled by file order, so the feature
+   bubble kept its tint while the card bubble (a (0,1,0) rule) correctly lost.
+   Measured, not guessed: the picture was drawn inside a coloured disc. */
+.md-typeset .md-home
+  :is(.md-home__card-icon, .md-home__feature-icon, .md-home__step-marker):has(
+    > .md-home__mark-img
+  ) {
+  background: none;
+  box-shadow: none;
+  --md-home-icon-size: 100%;
+}
+
+/* The same slot in a text block, which draws its mark as a block above the
+   prose rather than inline.  Mirrors `.md-home__text > .md-icon`. */
+.md-typeset .md-home .md-home__text > .md-home__mark-img {
+  display: block;
+  margin-block-end: var(--md-home-space-1);
+  --md-home-icon-size: 1.5em;
+}
+
 /* Icon bubbles carry the box; the `.md-icon` inside stays at 1em. */
 .md-home__card-icon,
 .md-home__feature-icon,
@@ -2110,21 +2162,14 @@
   transition: opacity 0.3s var(--md-home-ease), color 0.3s var(--md-home-ease);
 }
 
-/* An image logo is a brand mark the author supplied, so it is drawn as a circle
-   in its own colours: no `filter`, no inherited `color`, no opacity of ours.
-   `colored` is about the marks *we* draw, and deliberately has no say here.
-
-   The box is square and the picture covers it, so a square source is untouched
-   and anything else is centre-cropped -- which is what a circle needs.  Say so
-   in the docs: a wide wordmark would lose its ends. */
-.md-home__logo img {
-  aspect-ratio: 1;
-  border-radius: 50%;
-  display: block;
-  height: auto;
+/* An image logo is a brand mark the author supplied, so it is drawn in its own
+   colours: no `filter`, no inherited `color`, no opacity of ours.  `colored` is
+   about the marks *we* draw, and deliberately has no say here.  The circle, the
+   crop and the size all come from the shared `.md-home__mark-img` rule -- one
+   definition of "a picture in an icon slot", which this block was the reason to
+   write in the first place. */
+.md-home__logo .md-home__mark-img {
   margin: 0;
-  object-fit: cover;
-  width: var(--md-home-logo-size, 1.9em);
 }
 
 .md-home__logo-mark {
