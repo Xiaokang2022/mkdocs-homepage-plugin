@@ -712,10 +712,22 @@
   max-width: 36em;
 }
 
-.md-home__note {
+/* The caption under a row of buttons.
+
+   `space-4` looks like one step more than "tightly related", and it is on
+   purpose: a step is an `em`, and this element's own font-size is 0.8125em, so
+   `space-3` would resolve to 11.7px rather than the 14.4px the token means.
+   15.6px is what reads right under a 47px-tall button row -- clearly subordinate
+   to the buttons, without looking like a second, unrelated line of text.
+
+   The prefix is what makes the margin apply at all.  The reset above zeroes the
+   margin of every `p` inside the widget at (0,2,1); written bare this rule is
+   (0,1,0) and loses, so the caption sat hard against the buttons -- a measured
+   gap of exactly 0px. */
+.md-typeset .md-home .md-home__note {
   color: var(--md-default-fg-color--light);
   font-size: 0.8125em;
-  margin-block-start: var(--md-home-space-3);
+  margin-block-start: var(--md-home-space-4);
   opacity: 0.9;
 }
 
@@ -807,22 +819,31 @@
 }
 
 /* Material sizes `.md-button` for hero calls to action (padding .625em 2em, ~47px
-   tall).  Inside a block that dominates, so restate only the metrics and let the
-   theme keep its colour, border and hover. */
+   tall) *and* lays it out: `.md-typeset .md-button` is (0,2,0) and sets
+   `display: inline-block`.  Inside a block that dominates, so restate the metrics
+   and the box model, and let the theme keep its colour, border and hover.
+
+   The prefix is load-bearing, not decoration.  Written bare, `.md-home__action`
+   is (0,1,0) and loses to the theme's (0,2,0) outright -- so `inline-flex`,
+   `align-items` and `gap` were all dead and the icon and label were laid out as
+   plain inline content.  A button is a flex item of `.md-home__actions` that may
+   be squeezed, so the label then wrapped onto a second line, under the icon:
+   icon and text on two lines, centred, in every button that has an icon.
+
+   With the rule winning, the icon and the label are flex items on one line, and
+   because the row itself is `flex-wrap: wrap` a button that does not fit moves to
+   the next line rather than shrinking until its own label breaks. */
 .md-typeset .md-home .md-button {
+  align-items: center;
+  border-radius: var(--md-home-radius-sm);
+  display: inline-flex;
   font-size: 0.875em;
+  gap: 0.5em;
   line-height: 1.4;
   padding: 0.6em 1.4em;
-  border-radius: var(--md-home-radius-sm);
 }
 
-.md-home__action {
-  align-items: center;
-  display: inline-flex;
-  gap: 0.5em;
-}
-
-.md-home__action .md-icon {
+.md-typeset .md-home .md-home__action .md-icon {
   opacity: 0.85;
 }
 
@@ -1785,7 +1806,10 @@
   top: 4rem;
 }
 
-.md-home__pane-title {
+/* A `p`, and therefore subject to the same trap as the button caption: a bare
+   (0,1,0) rule loses to the widget's own margin reset (0,2,1).  This one sets the
+   split pane's eyebrow label, which sat flush against the text it labels. */
+.md-typeset .md-home .md-home__pane-title {
   color: var(--md-home-accent);
   font-size: 0.75em;
   font-weight: 600;
@@ -1939,7 +1963,11 @@
   font-weight: 600;
 }
 
-.md-home__step-desc {
+/* A `p`, and therefore subject to the same trap as the button caption: the
+   widget's own margin reset is (0,2,1) and a bare (0,1,0) rule loses to it, so
+   the description sat flush under the step's title -- two lines that read as one
+   run-on sentence.  `.md-typeset .md-home` puts the rule at (0,3,0). */
+.md-typeset .md-home .md-home__step-desc {
   color: var(--md-default-fg-color--light);
   font-size: 0.875em;
   margin-block-start: 0.25em;
@@ -2259,7 +2287,10 @@
    16. logos -- a "trusted by" row
    ========================================================================== */
 
-.md-home__logos-caption {
+/* A `p`, so it needs the prefix for the same reason as the button caption: the
+   widget's margin reset is (0,2,1) and a bare (0,1,0) rule loses, which left the
+   uppercase label sitting flush against the logo row it labels. */
+.md-typeset .md-home .md-home__logos-caption {
   color: var(--md-default-fg-color--light);
   font-size: 0.8125em;
   letter-spacing: 0.06em;

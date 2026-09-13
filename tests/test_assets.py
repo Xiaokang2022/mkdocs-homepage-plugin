@@ -1039,6 +1039,83 @@ def test_the_strip_does_not_inherit_the_sites_link_colour():
 
 
 # -- spacing that survives an author's own layout --------------------------
+def test_no_components_margin_is_shadowed_by_the_widgets_own_reset():
+    """A rule below the reset's specificity can never set a margin.
+
+    The widget zeroes the margin of every `p`/`ul`/`ol`/`dl` inside itself with
+    `.md-typeset .md-home :is(p, ul, ol, dl)` -- (0,2,1), which is what beats
+    Material's article margins.  A component rule written bare is (0,1,0) and
+    loses to it, so a declaration like `margin-block-start: var(--md-home-space-3)`
+    is simply dead.  Three were: the caption under the buttons (measured gap:
+    exactly 0px, so it sat hard against the buttons), the brand-wall label and a
+    step's description.
+
+    The components at risk are exactly the ones the renderer emits as
+    paragraph-like elements, so the list is read out of `render.py` rather than
+    typed here -- a new `p` component is covered the moment it is written.
+    """
+    renderer = read(PACKAGE / "render.py")
+    paragraph_classes = set()
+    for match in re.finditer(r"<(p|ul|ol|dl)\s[^>]*class=\"([^\"]*)\"", renderer):
+        for name in match.group(2).split():
+            if name.startswith("md-home__"):
+                paragraph_classes.add("." + name)
+    assert paragraph_classes, "no paragraph-like components found; this check would be vacuous"
+
+    reset = specificity(".md-typeset .md-home :is(p, ul, ol, dl)")
+    assert reset == (0, 2, 1), reset
+
+    checked = 0
+    offenders = []
+    for _, selector, body in css_rules():
+        for part in split_selector_list(selector):
+            if not (subject_classes(part) & paragraph_classes):
+                continue
+            # Only a *whole* margin declaration counts, and only the ones that set
+            # something non-zero -- `margin: 0` is the reset doing its job.
+            set_margins = {
+                prop: declared(body, prop)
+                for prop in ("margin", "margin-block-start", "margin-block-end",
+                             "margin-block", "margin-top", "margin-bottom")
+            }
+            set_margins = {p: v for p, v in set_margins.items() if v and v != "0" and v != "auto"}
+            if not set_margins:
+                continue
+            checked += 1
+            if specificity(part) <= reset:
+                offenders.append((part, specificity(part), set_margins))
+    assert checked >= 3, (
+        f"only {checked} margin declarations on paragraph components were examined; "
+        "this check has gone blind"
+    )
+    assert not offenders, (
+        "these margins are dead: the widget's own reset out-specifies them, so the "
+        "spacing never applies.  Prefix with `.md-typeset .md-home`.\n"
+        + "\n".join(f"  {part!r} at {score} declares {decl}" for part, score, decl in offenders)
+    )
+
+
+def test_the_button_caption_has_a_gap_that_actually_applies():
+    """A measured regression: the note sat 0px under the buttons.
+
+    Worth its own check because the bug was invisible in the source -- the
+    declaration was present and correct, and simply never won.
+    """
+    rules = [
+        (selector, body)
+        for _, selector, body in css_rules()
+        for part in split_selector_list(selector)
+        if subject_classes(part) == {".md-home__note"} and declared(body, "margin-block-start")
+    ]
+    assert rules, "the caption has no top margin at all"
+    reset = specificity(".md-typeset .md-home :is(p, ul, ol, dl)")
+    for part, _ in rules:
+        assert specificity(part) > reset, (
+            f"{part!r} is at {specificity(part)} against the reset's {reset}: the "
+            "caption renders hard against the buttons"
+        )
+
+
 def test_the_list_indent_reset_beats_the_themes_direction_prefix():
     """Measured in a browser: every cell was 20px narrower than its own track.
 
