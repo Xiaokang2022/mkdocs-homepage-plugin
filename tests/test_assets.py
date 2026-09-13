@@ -1366,8 +1366,18 @@ def test_the_row_layout_is_one_column_of_two_up_rows():
         and "minmax(0, 1fr) minmax(0, 1fr)" in declared(body, "grid-template-columns")
     ]
     assert pair, "the card row never becomes two-up"
-    for selector, _, context in pair:
+    for selector, body, context in pair:
         assert "min-width" in context, f"{selector!r} is two-up at every width: {context!r}"
+
+    # The two-up rule has to go through the author's variable, with the equal
+    # split as the fallback -- that is what makes `row_ratio` reachable at all,
+    # and putting it outside the media query would undo the stacked layout.
+    # NB `pair` is (selector, body, context); unpacking the third slot into `body`
+    # handed this assert the media query text instead of the declarations.
+    assert any(
+        "var(--md-home-tracks," in declared(rule_body, "grid-template-columns")
+        for _sel, rule_body, _ctx in pair
+    ), "the two-up rule no longer reads `--md-home-tracks`"
 
     single = [
         (selector, body, context)

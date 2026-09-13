@@ -130,3 +130,8 @@ title: sticky true
   和页面正文完全一致。栏标题用常规 Markdown 标题写就行。
 - 每一栏也可以单独 `theme`，见上。
 - 空位不适用（栏数由 `===` 决定）。
+
+!!! tip "一边想要卡片？用 `cards` 而不是 `split`"
+    `split` 的两栏都是正文。需要「一边是一张卡片、另一边是文字」时用
+    [`cards` 的 `layout: rows`](cards.md)——它有 `row_ratio` 控制宽度比例，
+    而 `split` 只能用 `ratio` 分配两栏的轨道。

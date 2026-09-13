@@ -372,6 +372,89 @@ def test_an_unknown_layout_falls_back_to_grid():
     assert "md-home__cards--grid" in html
 
 
+# -- the proportion of a card row -----------------------------------------
+def test_a_row_can_say_how_wide_the_card_is():
+    """The feature: card on one side, prose on the other, at the author's ratio.
+
+    Without it a card row is always half and half, which is wrong as soon as the
+    other side is a paragraph rather than a caption.
+    """
+    # A single value is the *card's* size; the prose takes what is left.
+    one = render(
+        "```homepage-cards\nlayout: rows\nrow_ratio: 18em\ncards:\n  - title: A\n    body: x\n```"
+    )
+    assert "--md-home-tracks:minmax(0, 18em) minmax(0, 1fr);" in one, one[:500]
+
+    # Two values are the two tracks, in order.
+    two = render(
+        "```homepage-cards\nlayout: rows\nrow_ratio: 2 3\ncards:\n  - title: A\n    body: x\n```"
+    )
+    assert "--md-home-tracks:minmax(0, 2fr) minmax(0, 3fr);" in two, two[:500]
+
+    # A bare number is a `fr` share, like `split`'s `ratio`.
+    bare = render(
+        "```homepage-cards\nlayout: rows\nrow_ratio: 1.5\ncards:\n  - title: A\n    body: x\n```"
+    )
+    assert "--md-home-tracks:minmax(0, 1.5fr) minmax(0, 1fr);" in bare
+
+    # An explicit prose floor, the escape hatch for a long paragraph.
+    floored = render(
+        "```homepage-cards\nlayout: rows\nrow_ratio: 16em 24em\ncards:\n  - title: A\n    body: x\n```"
+    )
+    assert "--md-home-tracks:minmax(0, 16em) minmax(0, 24em);" in floored
+
+
+def test_a_row_without_a_ratio_is_unchanged():
+    html = render("```homepage-cards\nlayout: rows\ncards:\n  - title: A\n    body: x\n```")
+    assert "--md-home-tracks" not in html
+    assert "md-home__card-row" in html
+
+
+def test_one_row_can_override_the_blocks_ratio():
+    """A single wide card in a column of narrow ones should not need its own block."""
+    html = render(
+        "```homepage-cards\nlayout: rows\nrow_ratio: 1 2\ncards:\n"
+        "  - title: A\n    body: x\n"
+        "  - title: B\n    body: y\n    row_ratio: 3 1\n```"
+    )
+    assert "--md-home-tracks:minmax(0, 1fr) minmax(0, 2fr);" in html
+    assert "--md-home-tracks:minmax(0, 3fr) minmax(0, 1fr);" in html
+
+
+def test_a_ratio_that_cannot_be_two_tracks_is_refused():
+    """A card row has two panes; three tracks would silently restructure it."""
+    for value in ("1 2 3", "1/2/3"):
+        html = render(
+            f"```homepage-cards\nlayout: rows\nrow_ratio: '{value}'\n"
+            "cards:\n  - title: A\n    body: x\n```"
+        )
+        assert "--md-home-tracks" not in html, value
+        assert "md-home--error" not in html, value
+
+    # ...as is a value that is not a track at all.
+    for value in ("wide", "0", "-3"):
+        html = render(
+            f"```homepage-cards\nlayout: rows\nrow_ratio: '{value}'\n"
+            "cards:\n  - title: A\n    body: x\n```"
+        )
+        assert "--md-home-tracks" not in html, value
+
+
+def test_the_ratio_survives_a_reversed_row():
+    html = render(
+        "```homepage-cards\nlayout: rows\nrow_ratio: 1 3\n"
+        "cards:\n  - title: A\n    body: x\n    reverse: true\n```"
+    )
+    assert "md-home__card-row--reverse" in html
+    assert "--md-home-tracks:minmax(0, 1fr) minmax(0, 3fr);" in html
+
+
+def test_a_row_ratio_is_ignored_in_the_grid_layout():
+    """A grid has a column count, not two panes -- the prop is simply inert."""
+    html = render("```homepage-cards\ncards:\n  - title: A\n```\n")
+    assert "--md-home-tracks" not in html
+
+
 # -- columns reach every grid ----------------------------------------------
 def test_every_grid_container_can_take_a_declared_column_count():
     """`columns` was silently ignored by one grid and honoured by the rest.

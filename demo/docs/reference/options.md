@@ -82,6 +82,19 @@ plugins:
 | `--md-home-gap` | `0.9em` | 栅格间距 |
 | `--md-home-min` | `13em` | **没写 `columns` 时**单个格子的最小宽度 |
 | `--md-home-min-narrow` | `8.5em` | **写了 `columns` 时**的硬底线 |
+| `--md-home-tracks` | — | 多栏布局的轨道比例（`split` 与 `cards` 的 `layout: rows` 共用） |
+
+`--md-home-tracks` 没有默认值，因为每个多栏区块的默认都不同（`split` 等分，
+卡片行也是对半）。它的用处是给**整站**定一个默认比例：
+
+```yaml
+plugins:
+  - homepage:
+      css_vars:
+        --md-home-tracks: minmax(0, 18em) minmax(0, 1fr)
+```
+
+区块自己的 `ratio`（`split`）或 `row_ratio`（`cards`）会盖掉它。
 
 两个最小宽度是两件事，见[设计约定](index.md)。
 

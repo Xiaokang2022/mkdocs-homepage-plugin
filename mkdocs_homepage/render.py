@@ -242,6 +242,53 @@ def as_tracks(value: Any) -> str | None:
     return " ".join(tracks) if tracks else None
 
 
+def row_tracks(value: Any) -> str | None:
+    """Validate the ``row_ratio`` prop into the two tracks of a card row.
+
+    A card row has exactly two panes -- the card and its prose -- so the value is
+    either two tracks (``2 3``, ``18em 1fr``) or, more conveniently, just the
+    **card's own size**, with the prose taking whatever is left (``18em``,
+    ``1.2``).  Writing one number and meaning "the card" is how people describe
+    this layout out loud, and two numbers is the escape hatch for when the prose
+    needs a floor of its own.
+
+    Both ends are wrapped in ``minmax(0, ...)`` so a pane can give ground on a
+    narrow desktop rather than forcing the row to overflow.  The mobile layout
+    stacks the two panes anyway, so this only ever applies beside each other.
+
+    A bare number is accepted here but *not* by :func:`as_tracks`: there a single
+    track would silently collapse a multi-pane layout to one column, whereas here
+    "just the card's size" is a meaningful thing to say.
+    """
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if value <= 0:
+            return None
+        return f"minmax(0, {float(value):g}fr) minmax(0, 1fr)"
+
+    tracks = as_tracks(value)
+    if not tracks:
+        return None
+    parts = tracks.split()
+    if len(parts) > 2:
+        # Three panes have no meaning here; reject rather than restructure the row.
+        return None
+    if len(parts) == 1:
+        # A single track is the card's size, so it has to be a real one: `0fr`
+        # would collapse the card to nothing while looking like a value.
+        if not _positive_track(parts[0]):
+            return None
+        return f"minmax(0, {parts[0]}) minmax(0, 1fr)"
+    return f"minmax(0, {parts[0]}) minmax(0, {parts[1]})"
+
+
+def _positive_track(token: str) -> bool:
+    """Whether a track size is a positive length, or a keyword that fills."""
+    if token in ("auto", "min-content", "max-content"):
+        return True
+    number = re.match(r"^(\d+(?:\.\d+)?)", token)
+    return bool(number) and float(number.group(1)) > 0
+
+
 def as_number(value: Any) -> float | None:
     """Best-effort float, or ``None`` (used to keep unitless CSS numbers safe)."""
     try:
@@ -890,10 +937,20 @@ class BlockRenderer:
                 if body
                 else '<div class="md-home__card-aside" aria-hidden="true"></div>'
             )
+            # The proportion between the card and its prose is the author's to
+            # set, per card or for the whole block.  Written without it the two
+            # panes are equal, which is the right default for a list of "one
+            # claim each" but wrong the moment the prose is a paragraph.
+            tracks = row_tracks(
+                first_of(card, "row_ratio", "pane_ratio", "aside_ratio", "row_split")
+            ) or row_tracks(
+                first_of(block.props, "row_ratio", "pane_ratio", "aside_ratio", "row_split")
+            )
             cell_classes.append("md-home__cell--row")
             element = (
                 f'<div class="md-home__card-row'
-                f'{" md-home__card-row--reverse" if as_bool(card.get("reverse"), False) else ""}">'
+                f'{" md-home__card-row--reverse" if as_bool(card.get("reverse"), False) else ""}"'
+                f'{style_attr({"--md-home-tracks": Validated(tracks)}) if tracks else ""}>'
                 f'<div class="md-home__card-pane">{element}</div>{pane}</div>'
             )
 

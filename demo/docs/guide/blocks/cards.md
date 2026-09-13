@@ -26,6 +26,7 @@ cards:
 | `cards` | 列表 | 必填 | 卡片列表。别名 `items` |
 | `card_style` | 关键词 | `elevated` | 卡片外观。别名 `style` |
 | `layout` | 关键词 | `grid` | `grid` 网格 / `rows` 一卡一栏。别名 `card_layout` |
+| `row_ratio` | 轨道 | 对半 | `layout: rows` 时两边的宽度，见下。别名 `pane_ratio` `aside_ratio` |
 | `link_text` | 文本 | `查看` | 卡片页脚文案的默认值 |
 | `ratio` | 比例 | `16/9` | **封面的**默认比例（单张卡可覆盖） |
 | `image_ratio` | 比例 | — | 同上，优先于 `ratio` |
@@ -81,6 +82,7 @@ cards:
 | `class` | 追加自定义类 |
 | `body` | `layout: rows` 时右栏的 Markdown。别名 `aside` `more` `detail` |
 | `reverse` | `layout: rows` 时左右对调 |
+| `row_ratio` | 只改这一行的宽度比例（`1 2`、`18em`），覆盖块上的值 |
 | `alt` | `icon` 是图片时的替代文本；一般不用写，见下 |
 
 `image:` 是**封面图**，所以卡片头上那个圆形成员要用 `icon:` 写图片路径：
@@ -165,6 +167,91 @@ cards:
     body: |
       图和文左右对调。
 ```
+
+### 控制两边的宽度：`row_ratio`
+
+默认是**对半分**。写 `row_ratio` 就能改，值有两种写法：
+
+| 写法 | 含义 |
+| --- | --- |
+| `row_ratio: 18em` | 只给**卡片**的大小，右边自动占剩下的 |
+| `row_ratio: 2 3` | 直接给两条轨道，顺序是「卡片 说明」 |
+
+纯数字会变成 `fr`，所以 `2 3` 读作「卡片占 2 份、说明占 3 份」。
+
+```homepage-cards
+layout: rows
+row_ratio: 18em
+title: 'row_ratio: 18em'
+subtitle: 卡片固定 18em，说明占满剩下的宽度——最适合「图标卡 + 一段说明」。
+cards:
+  - title: 安装
+    icon: download-outline
+    desc: 一条命令
+    body: |
+      `pip install mkdocs-homepage-plugin`，然后在 `mkdocs.yml` 里加一行
+      `plugins: [homepage]`。不需要再往 `markdown_extensions` 里加东西。
+
+      右边这一栏是完整的 Markdown，可以写多段、列表、引用块。
+  - title: 编写
+    icon: text-box-outline
+    desc: 围栏里写属性
+    body: |
+      一个围栏代码块就是一块内容：属性写 YAML，`---` 以下是正文。
+
+      卡片本身只有标题和图标，所有说明都放在右边，于是**一眼扫过去**
+      看到的是「安装 / 编写 / 预览」，而不是三张一样大的卡片。
+```
+
+```homepage-cards
+layout: rows
+row_ratio: 2 3
+title: 'row_ratio: 2 3'
+subtitle: 卡片 2 份、说明 3 份。
+cards:
+  - title: 窄卡宽文
+    icon: layers-outline
+    desc: 卡片占 2/5
+    body: |
+      说明占 3/5，读起来更舒服——一段话每行太长或太短都会累。
+  - title: 也可以单行覆盖
+    icon: refresh
+    desc: 这一行反过来
+    row_ratio: 3 2
+    body: |
+      单张卡写 `row_ratio` 会盖掉块上的值；`reverse: true` 还能把两边对调。
+```
+
+!!! tip "卡片比说明高的时候"
+    两栏默认**垂直居中**。想让它们顶对齐就写 `align: start`——
+    和 `hero`、`cta` 是同一个开关。
+
+## 能不能把区块嵌套起来？
+
+**不能。** 围栏必须写在顶层，而且区块的正文是用「**不含本插件**」的 Markdown
+实例渲染的，所以正文里再写一个 `homepage-*` 围栏只会**原样显示成代码块**：
+
+````markdown
+```homepage-split
+---
+左边
+
+===
+
+```homepage-cards          ← 不会渲染，会被当成示例代码显示
+cards:
+  - title: A
+```
+```
+````
+
+这是刻意的：区块正文由子渲染器处理，如果允许嵌套，一个正文里再放正文就会
+无限递归下去（`converter.py` 里把本插件按包名排除掉，注释是
+*"so a fragment can never recurse"*）。
+
+**要「一边卡片、一边正文」，用 `layout: rows`**——它就是为这件事准备的，
+而且比嵌套多一个好处：两边的宽度由你控制。上面那一节就是它。
+`split` 则适合**两边都是正文**的场合（比如「短栏目录 + 长栏正文」）。
 
 ## 单张卡片的颜色
 

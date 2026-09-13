@@ -85,6 +85,7 @@ cards:
 | --- | --- |
 | 页面最上面那一屏 | [`hero`](hero.md) |
 | 一排等大的入口 / 功能 | [`cards`](cards.md) |
+| **卡片占一边、文字写另一边** | [`cards`](cards.md) 的 `layout: rows` |
 | 一串「图 + 说明」交替往下走 | [`showcase`](showcase.md) |
 | 密集的小功能点，不要卡片框 | [`features`](features.md) |
 | 用户评价 | [`testimonials`](testimonials.md) |

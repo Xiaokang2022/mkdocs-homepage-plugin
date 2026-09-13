@@ -1029,12 +1029,24 @@
 
 @media (min-width: 45em) {
   .md-home__card-row {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    /* The author's proportion, when they set one (`row_ratio`).  It lives in the
+       media query on purpose: beside each other is the only place a proportion
+       means anything, and the stacked layout must not be affected by it.  The
+       fallback is the equal split this layout has always had. */
+    grid-template-columns:
+      var(--md-home-tracks, minmax(0, 1fr) minmax(0, 1fr));
   }
 
   .md-home__card-row--reverse > .md-home__card-pane {
     order: 2;
   }
+}
+
+/* `align: start` top-aligns the two panes instead of centring them, which is what
+   a row with a paragraph beside a short card wants -- the same switch the hero
+   has, so `align` means one thing across the multi-pane blocks. */
+.md-home--align-start .md-home__card-row {
+  align-items: start;
 }
 
 .md-home__card-pane,

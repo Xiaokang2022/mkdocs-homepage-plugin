@@ -60,6 +60,19 @@ title: 正文里什么都能写
 | `toc` | 会给卡片标题加永久链接锚点，还会留下一个页面级目录 |
 | `meta` | 会把正文开头的 `键: 值` 段落当成 front matter 吃掉 |
 
+!!! warning "区块不能嵌套"
+    区块的正文是用一个**不含本插件**的 Markdown 实例渲染的，所以正文里再写
+    `homepage-*` 围栏只会**原样显示成代码块**。
+
+    这是刻意的：正文由子渲染器处理，允许嵌套的话「正文里的正文」会无限递归下去
+    （`converter.py` 里按包名把本插件排除掉，注释是 *"so a fragment can never
+    recurse"*）。
+
+    需要「一边是一块内容、一边是文字」时，用那个区块自己的组合属性：
+    [`cards` 的 `layout: rows`](blocks/cards.md)（卡片 + 说明，宽度可控）、
+    [`split`](blocks/split.md)（多栏正文）、[`showcase`](blocks/showcase.md)
+    （图文交替）。
+
 !!! warning "区块不能放在内容标签页里"
     围栏必须从**行首 0–3 个空格**开始，也就是「顶层围栏」。
 

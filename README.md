@@ -207,6 +207,7 @@ cards:
 | `ratio` | 整张卡的宽高比；内部内容过高时卡片内部滚动 |
 | `image_ratio` / `cover_ratio` | 封面图的比例（覆盖块上的 `ratio`） |
 | `layout: rows` | 卡片在左、说明文字在右；没写 `body` 的行右栏留空，保持对齐 |
+| `row_ratio` | `layout: rows` 时两边的宽度：`18em`（卡片固定，右边占剩下的）或 `2 3`（两条轨道） |
 | `body` / `aside` | `layout: rows` 时的右栏，用站点自己的 Markdown 渲染 |
 | `reverse` | 单行左右对调 |
 | `bg` / `bg_dark` | 底色（`surface` 是别名；浅色与深色分开写） |

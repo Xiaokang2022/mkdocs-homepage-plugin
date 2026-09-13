@@ -173,7 +173,23 @@ Material 用 `[dir="ltr"] .md-typeset ul li`（0,2,2）给列表项加左缩进�
 - `layout: rows` —— 卡片和它的说明文字并排。
 - `bg` / `bg_dark` / `glow` / `glow_dark` —— 这张卡的底色与光色。
 
-### 为什么 `ratio` 需要 `align-self: start`
+### 为什么区块不能嵌套
+
+区块的正文是用一个**不含本插件**的 Markdown 实例渲染的（`converter.py` 按包名
+把 `mkdocs_homepage` 从子渲染器的扩展列表里排除掉），所以正文里再写一个
+`homepage-*` 围栏只会原样显示成代码块。
+
+这不是省略，是必需的：区块正文由子渲染器处理，而子渲染器如果认识本插件，
+「正文里再放正文」就会无限递归下去。所以「两个区块并排」这件事只能由某个区块
+自己的属性表达，而不是由嵌套表达：
+
+| 想要的效果 | 用什么 |
+| --- | --- |
+| 卡片 + 说明文字，宽度可控 | [`cards` 的 `layout: rows`](../guide/blocks/cards.md) + `row_ratio` |
+| 两栏都是正文 | [`split`](../guide/blocks/split.md) + `ratio` |
+| 图 + 文字，逐行交替 | [`showcase`](../guide/blocks/showcase.md) |
+
+### 为什么卡片的比例需要 `align-self: start`
 
 `.md-home__cell` 是一个 flex 行（没写 `ratio` 的卡片靠它齐平高度），于是卡片是
 flex 项，默认 `align-self: stretch` 会**给它一个确定高度**——而确定高度会直接盖过
