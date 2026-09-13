@@ -859,8 +859,11 @@
 
    The floor here is `--md-home-min-narrow`, NOT `--md-home-min`: see the note on
    the token.  With the comfortable floor the declared count was unreachable and
-   `columns: 4` was indistinguishable from `columns: 3`. */
-.md-typeset .md-home :is(.md-home__grid, .md-home__links, .md-home__steps)[data-home-cols] {
+   `columns: 4` was indistinguishable from `columns: 3`.
+
+   A brand-wall grid is in the list because it is a grid like the others; `row`
+   and `marquee` never carry the marker, so the flex line is untouched. */
+.md-typeset .md-home :is(.md-home__grid, .md-home__links, .md-home__steps, .md-home__logos-list)[data-home-cols] {
   grid-template-columns:
     repeat(
       auto-fill,

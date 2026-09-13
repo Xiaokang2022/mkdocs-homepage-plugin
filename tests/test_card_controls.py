@@ -82,7 +82,16 @@ def test_a_blank_does_not_invent_a_missing_required_prop():
     assert "needs an `image`" not in html
     # ...and a block whose *only* entry is a blank is still an error, not an
     # empty grid with no explanation.
-    for kind in ("cards", "features", "stats", "steps", "links", "logos"):
+    for kind in (
+        "cards",
+        "features",
+        "stats",
+        "steps",
+        "links",
+        "logos",
+        "testimonials",
+        "showcase",
+    ):
         html = render(f"```homepage-{kind}\n{kind}:\n  - gap\n```")
         assert "md-home--error" in html, kind
         assert "needs a" in html, kind
@@ -361,3 +370,24 @@ def test_an_unknown_layout_falls_back_to_grid():
     html = render("```homepage-cards\nlayout: spiral\ncards:\n  - title: A\n```")
     assert "md-home--error" not in html
     assert "md-home__cards--grid" in html
+
+
+# -- columns reach every grid ----------------------------------------------
+def test_every_grid_container_can_take_a_declared_column_count():
+    """`columns` was silently ignored by one grid and honoured by the rest.
+
+    A brand wall in `style: grid` is a grid like any other, so `columns: 4` has to
+    mean four -- a prop that does nothing is worse than a prop that is absent.
+    """
+    grid = render("```homepage-logos\nstyle: grid\ncolumns: 4\nlogos:\n  - simple/go | Go\n```")
+    assert "data-home-cols" in grid, grid[:400]
+    assert "--md-home-cols:4;" in grid
+
+    # The flex and marquee forms are not grids, so the marker stays off them --
+    # `grid-template-columns` on a flex container would be dead weight.
+    for style in ("row", "marquee"):
+        flexible = render(
+            f"```homepage-logos\nstyle: {style}\ncolumns: 4\nlogos:\n  - simple/go | Go\n```"
+        )
+        assert "data-home-cols" not in flexible, style
+        assert "md-home--error" not in flexible

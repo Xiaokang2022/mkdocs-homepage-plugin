@@ -138,6 +138,10 @@ REVEALS = frozenset({"fade", "up", "down", "left", "right", "zoom", "flip"})
 #: Decorative background layers a block can opt into.
 PATTERNS = frozenset({"aurora", "grid", "dots", "rays", "none"})
 
+#: Values that mean "no decorative layer at all".  Shared by the normaliser and
+#: the validator, which have to tell "explicitly none" from "not a pattern".
+PATTERN_OPTOUT = frozenset({"", "none", "off", "false", "0", "plain"})
+
 #: Named colour themes.  Each one only sets a hue; the stylesheet derives the
 #: accent, tint, hairline and shadow from it, so a new theme is a one-line change.
 THEMES: tuple[str, ...] = (
@@ -462,17 +466,23 @@ def parse_block(
         props["theme"] = normalize_theme(theme)
 
     pattern = props.get("pattern")
-    if pattern is not None and normalize_pattern(pattern) is None:
-        issues.append(
-            ParseIssue(
-                f"unknown pattern {pattern!r}; expected one of: " + ", ".join(sorted(PATTERNS)),
-                line,
-                source,
+    if pattern is not None:
+        # `none` is a documented value and normalises to "no pattern", which is
+        # indistinguishable from an unknown keyword by the return value alone.
+        # Without this test the one spelling everybody reaches for to *remove* a
+        # pattern warned that it was not a pattern -- and the warning listed
+        # `none` as one of the valid choices.
+        normalized = normalize_pattern(pattern)
+        if normalized is None and not is_pattern_optout(pattern):
+            issues.append(
+                ParseIssue(
+                    f"unknown pattern {pattern!r}; expected one of: "
+                    + ", ".join(sorted(PATTERNS)),
+                    line,
+                    source,
+                )
             )
-        )
-        props["pattern"] = None
-    elif pattern is not None:
-        props["pattern"] = normalize_pattern(pattern)
+        props["pattern"] = normalized
 
     return (
         Block(kind=kind, props=props, body=markdown_body, line=line, info=info, source=source),
@@ -606,9 +616,20 @@ def normalize_pattern(value: Any) -> str | None:
     if isinstance(value, bool):
         return "aurora" if value else None
     text = str(value).strip().lower()
-    if not text or text in {"none", "off", "false", "0", "plain"}:
+    if text in PATTERN_OPTOUT:
         return None
     return text if text in PATTERNS else None
+
+
+def is_pattern_optout(value: Any) -> bool:
+    """Whether *value* asks for **no** pattern, as opposed to naming a bad one.
+
+    ``normalize_pattern`` answers both questions with ``None``, so a caller that
+    wants to warn about a typo has to ask this separately.
+    """
+    if isinstance(value, bool):
+        return True
+    return str(value).strip().lower() in PATTERN_OPTOUT
 
 
 def as_bool_prop(props: dict, key: str, default: bool = False) -> bool:

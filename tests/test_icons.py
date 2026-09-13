@@ -191,7 +191,13 @@ def test_every_icon_used_in_the_demo_is_declared():
                 target = pictures if is_image_ref(name) else used
                 target.setdefault(name, []).append(f"{path.name}:{segment.line}")
     assert used, "the demo uses no icons at all; this check would be vacuous"
-    undeclared = {name: where for name, where in used.items() if name not in ICON_PATHS}
+    # Both sets are legitimate `icon:` values, and they are written differently: a
+    # glyph is bare (`rocket-launch-outline`), a brand mark carries the set prefix
+    # (`simple/github`).  Checking only the MDI table made this look like a failure
+    # the first time the docs spelled a brand out as a key instead of leaning on the
+    # `|` shorthand, which this collector cannot see.
+    declared = set(ICON_PATHS) | {f"simple/{name}" for name in BRAND_PATHS}
+    undeclared = {name: where for name, where in used.items() if name not in declared}
     assert not undeclared, f"the demo uses undeclared icons: {undeclared}"
 
 

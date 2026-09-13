@@ -12,7 +12,7 @@ image_frame: browser
 ratio: 16/10
 actions:
   - 快速开始 | guide/index.md | primary | rocket-launch-outline
-  - 区块总览 | guide/blocks.md | secondary | view-dashboard-outline
+  - 区块总览 | guide/blocks/index.md | secondary | view-dashboard-outline
 note: MIT 许可 · 零前端依赖 · 与 mkdocs-material 9.x 同源
 highlights:
   - 16 | 区块类型 | view-dashboard-outline
@@ -79,7 +79,7 @@ showcase:
       - 每张卡片可以有自己的主题色
       - 鼠标移上去有轻微的视角与高光变化
       - span 与 featured 可以让它占两列
-    link: guide/blocks.md
+    link: guide/blocks/cards.md
     link_text: 卡片区块
   - eyebrow: 可读性
     title: 正文就是站点的正文
@@ -113,54 +113,54 @@ cards:
   - title: 首屏
     icon: rocket-launch-outline
     desc: 大标题、导语、按钮、配图，还可以带一组关键数字。
-    link: guide/blocks.md
+    link: guide/blocks/hero.md
     badge: hero
   - title: 卡片墙
     icon: view-dashboard-outline
     desc: 3D 倾斜与跟随光标的高光，每张卡片可独立配色。
-    link: guide/blocks.md
+    link: guide/blocks/cards.md
     theme: cyan
     badge: cards
   - title: 图文特写
     icon: image-outline
     desc: 图文左右交替，带要点列表与「了解更多」链接。
-    link: guide/blocks.md
+    link: guide/blocks/showcase.md
     theme: teal
     badge: showcase
   - title: 画册
     icon: view-gallery-outline
     desc: 原生横向滚动，保留触控板、触摸与键盘操作。
-    link: guide/blocks.md
+    link: guide/blocks/gallery.md
     theme: green
     badge: gallery
   - title: 引用
     icon: format-quote-open
     desc: 头像、姓名、职位，外加可选的星级评分。
-    link: guide/blocks.md
+    link: guide/blocks/testimonials.md
     theme: amber
     badge: testimonials
   - title: 品牌墙
     icon: shape-outline
     desc: 内置 Simple Icons 品牌图标集，可灰阶、可走马灯。
-    link: guide/blocks.md
+    link: guide/blocks/logos.md
     theme: orange
     badge: logos
   - title: 数字
     icon: chart-line
     desc: 滚动到可见时开始计数，前后缀自动分离。
-    link: guide/blocks.md
+    link: guide/blocks/stats.md
     theme: deep-orange
     badge: stats
   - title: 步骤
     icon: timeline-outline
     desc: 纵向或横向，可用图标或自动编号。
-    link: guide/blocks.md
+    link: guide/blocks/steps.md
     theme: pink
     badge: steps
   - title: 行动号召
     icon: lightning-bolt-outline
     desc: 居中的收尾区块，可以带一张配图。
-    link: guide/blocks.md
+    link: guide/blocks/cta.md
     theme: purple
     badge: cta
 ```
@@ -255,7 +255,7 @@ pattern: aurora
 gradient: true
 actions:
   - 快速开始 | guide/index.md | primary | rocket-launch-outline
-  - 区块总览 | guide/blocks.md | secondary | view-dashboard-outline
+  - 区块总览 | guide/blocks/index.md | secondary | view-dashboard-outline
 note: 拿不准从哪开始？先看设计约定，那里解释了每一个决定的来由。
 ```
 
@@ -266,5 +266,6 @@ columns: 3
 links:
   - 快速开始 | guide/index.md | 三步启用插件 | rocket-launch-outline
   - 语法速查 | guide/syntax.md | 属性、正文与分隔线 | text-box-outline
-  - 区块总览 | guide/blocks.md | 十六种区块一览 | view-dashboard-outline
+  - 区块总览 | guide/blocks/index.md | 十六种区块一览 | view-dashboard-outline
+  - 场景配方 | guide/recipes.md | 想做这样一个页面 | compass-outline
 ```

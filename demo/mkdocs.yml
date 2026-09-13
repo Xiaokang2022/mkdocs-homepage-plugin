@@ -56,9 +56,29 @@ nav:
   - 指南:
       - guide/index.md
       - guide/syntax.md
-      - guide/blocks.md
+      - 全部区块:
+          - guide/blocks/index.md
+          - hero: guide/blocks/hero.md
+          - cards: guide/blocks/cards.md
+          - showcase: guide/blocks/showcase.md
+          - features: guide/blocks/features.md
+          - testimonials: guide/blocks/testimonials.md
+          - logos: guide/blocks/logos.md
+          - image: guide/blocks/image.md
+          - gallery: guide/blocks/gallery.md
+          - split: guide/blocks/split.md
+          - text: guide/blocks/text.md
+          - stats: guide/blocks/stats.md
+          - steps: guide/blocks/steps.md
+          - links: guide/blocks/links.md
+          - cta: guide/blocks/cta.md
+          - anim: guide/blocks/anim.md
+          - divider: guide/blocks/divider.md
+      - guide/recipes.md
   - 参考:
       - reference/index.md
+      - reference/options.md
+      - reference/icons.md
 
 extra_css:
   - assets/extra.css

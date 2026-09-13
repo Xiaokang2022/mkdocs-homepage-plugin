@@ -63,6 +63,7 @@ stats:
 
 ## 下一步
 
-- [语法速查](syntax.md) —— 围栏、属性、正文的分工
-- [全部区块](blocks.md) —— 每种区块支持的属性
+- [语法](syntax.md) —— 围栏、属性、正文的分工，以及全部通用属性
+- [全部区块](blocks/index.md) —— 一个区块一页，含全部属性
+- [场景配方](recipes.md) —— 「我想做这样一个页面」
 - [设计约定](../reference/index.md) —— 它为什么看起来像 Material

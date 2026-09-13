@@ -101,22 +101,23 @@ cards:
 
 | 区块 | 用途 | 主要属性 |
 | --- | --- | --- |
-| `hero` | 首屏 | `eyebrow` `title` `subtitle` `image` `actions` `highlights` `mirror` |
-| `cards` | 卡片墙（3D 倾斜 + 高光），支持一卡一栏与单卡配色 | `cards` `card_style` `columns` `min_cols` `layout` |
-| `showcase` | 图文交替的叙事行 | `showcase` `alternate` `reverse` `link_text` |
-| `features` | 无边框特性网格 | `features` `icon_style` `columns` |
-| `testimonials` | 引用 / 评价 | `testimonials` `style` `rating` |
-| `logos` | 品牌墙 / 走马灯 | `logos` `style` `colored` `size` `caption` |
-| `image` | 单张图片 | `src` `caption` `ratio` `float` `frame` `shadow` |
-| `gallery` | 可滚动 / 分页画册 | `images` `mode` `per_view` `ratio` |
-| `split` | 多栏图文（正文用 `===` 分栏） | `ratio` `divider` `reverse` `sticky` `panes` |
-| `text` | 正文段落 | `panel` `lead` `columns` `icon` `collapsible` |
-| `stats` | 数字，滚动到可见时计数 | `stats` `animate` `columns` |
-| `steps` | 步骤 / 时间线 | `steps` `direction` `numbered` |
-| `links` | 链接列表、胶囊、按钮 | `links` `style` `columns` |
-| `cta` | 收尾的行动号召 | `eyebrow` `title` `actions` `note` `image` `pattern` |
-| `anim` | 动画容器 | `effect` `duration` `delay` |
-| `divider` | 分隔线 | `style` `size` `text` |
+| [`hero`](demo/docs/guide/blocks/hero.md) | 首屏 | `eyebrow` `title` `subtitle` `image` `actions` `highlights` `mirror` |
+| [`cards`](demo/docs/guide/blocks/cards.md) | 卡片墙（3D 倾斜 + 高光），支持一卡一栏与单卡配色 | `cards` `card_style` `columns` `min_cols` `layout` |
+| [`showcase`](demo/docs/guide/blocks/showcase.md) | 图文交替的叙事行 | `showcase` `alternate` `reverse` `link_text` |
+| [`features`](demo/docs/guide/blocks/features.md) | 无边框特性网格 | `features` `icon_style` `columns` |
+| [`testimonials`](demo/docs/guide/blocks/testimonials.md) | 引用 / 评价 | `testimonials` `style` `rating` |
+| [`logos`](demo/docs/guide/blocks/logos.md) | 品牌墙 / 走马灯 | `logos` `style` `colored` `size` `caption` |
+| [`image`](demo/docs/guide/blocks/image.md) | 单张图片 | `src` `caption` `ratio` `float` `frame` `shadow` |
+| [`gallery`](demo/docs/guide/blocks/gallery.md) | 可滚动 / 分页画册 | `images` `mode` `per_view` `ratio` |
+| [`split`](demo/docs/guide/blocks/split.md) | 多栏图文（正文用 `===` 分栏） | `ratio` `divider` `reverse` `sticky` `panes` |
+| [`text`](demo/docs/guide/blocks/text.md) | 正文段落 | `panel` `lead` `columns` `icon` `collapsible` |
+| [`stats`](demo/docs/guide/blocks/stats.md) | 数字，滚动到可见时计数 | `stats` `animate` `columns` |
+| [`steps`](demo/docs/guide/blocks/steps.md) | 步骤 / 时间线 | `steps` `direction` `numbered` |
+| [`links`](demo/docs/guide/blocks/links.md) | 链接列表、胶囊、按钮 | `links` `style` `columns` |
+| [`cta`](demo/docs/guide/blocks/cta.md) | 收尾的行动号召 | `eyebrow` `title` `actions` `note` `image` `pattern` |
+| [`anim`](demo/docs/guide/blocks/anim.md) | 动画容器 | `effect` `duration` `delay` |
+| [`divider`](demo/docs/guide/blocks/divider.md) | 分隔线 | `style` `size` `text` |
+
 
 别名可用：`card` `grid` `sections` `rows` `spotlight` `quotes` `reviews` `brands` `clients`
 `columns` `cols` `img` `figure` `carousel` `slider` `prose` `banner` `numbers` `timeline`
@@ -141,7 +142,8 @@ cards:
 | `min_cols` | 没写 `columns` 时单个栅格项的最小宽度，默认 `13em` |
 | `ratio` | 该区块图片的默认宽高比（比例写斜杠：`16/10`） |
 
-完整属性表见 [区块总览](demo/docs/guide/blocks.md)。
+完整属性表见[区块总览](demo/docs/guide/blocks/index.md)（一个区块一页）；
+「想做这样一个页面」看[场景配方](demo/docs/guide/recipes.md)。
 
 ### 空位与列数
 

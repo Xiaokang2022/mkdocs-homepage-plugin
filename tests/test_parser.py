@@ -168,6 +168,43 @@ def test_normalize_pattern(value, expected):
     assert normalize_pattern(value) == expected
 
 
+def test_a_pattern_can_be_switched_off_without_a_warning(caplog):
+    """`pattern: none` used to warn that `none` is not a pattern.
+
+    `normalize_pattern` answers "no pattern" with `None`, so the validator could
+    not tell an explicit opt-out from a typo -- and `hero`/`cta` default to
+    `aurora`, which makes switching it off the single most likely thing to write.
+    The warning even listed `none` among the valid choices, which is how the
+    contradiction stayed invisible.
+    """
+    from tests.conftest import render
+
+    for spelling in ("none", "off", "false", "plain", "", "None"):
+        with caplog.at_level(logging.WARNING, logger="mkdocs.plugins.homepage"):
+            html = render(f"```homepage-hero\ntitle: A\npattern: '{spelling}'\n```")
+        assert "unknown pattern" not in caplog.text, spelling
+        assert "md-home--pattern-" not in html, spelling
+        assert "md-home--error" not in html, spelling
+        caplog.clear()
+
+    # ...while a genuine typo still warns, and names the choices.
+    with caplog.at_level(logging.WARNING, logger="mkdocs.plugins.homepage"):
+        render("```homepage-hero\ntitle: A\npattern: aurorra\n```")
+    assert "unknown pattern" in caplog.text
+    assert "aurora" in caplog.text
+
+
+def test_every_named_pattern_is_reachable():
+    """`none` is in `PATTERNS`, so it may not be the one value that always warns."""
+    from mkdocs_homepage.parser import PATTERNS, PATTERN_OPTOUT
+    from tests.conftest import render
+
+    assert "none" in PATTERNS
+    for pattern in sorted(PATTERNS - PATTERN_OPTOUT):
+        html = render(f"```homepage-hero\ntitle: A\npattern: {pattern}\n```")
+        assert f"md-home--pattern-{pattern}" in html, pattern
+
+
 def test_unknown_kind_is_reported_and_kept(blocks, caplog):
     with caplog.at_level(logging.WARNING, logger="mkdocs.plugins.homepage"):
         block = blocks("```homepage-nonsense\ntitle: A\n```\n")[0]

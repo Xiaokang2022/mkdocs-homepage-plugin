@@ -915,7 +915,7 @@ class BlockRenderer:
             first_of(props, "showcase", "items", "sections"),
             ("title", "image", "desc", "link"),
         )
-        if not rows:
+        if not any(not is_gap(row) for row in rows):
             raise BlockError("a showcase block needs a `showcase:` list with at least one item")
 
         alternate = as_bool(props.get("alternate"), True)
@@ -1137,7 +1137,10 @@ class BlockRenderer:
                 "</div></div>"
             )
         else:
-            row = f'<ul class="md-home__logos-list" role="list">{"".join(cells)}</ul>'
+            # The list only becomes a grid in `style: grid`; `row` is a flex line,
+            # so the column switch would be a silent no-op there.
+            marker = self.grid_attrs(block) if style == "grid" else ""
+            row = f'<ul class="md-home__logos-list"{marker} role="list">{"".join(cells)}</ul>'
 
         wrapper = (
             f'<div class="md-home__logos md-home__logos--{esc(style)}'
