@@ -19,6 +19,7 @@ can never disagree about how a fragment renders.
 from __future__ import annotations
 
 import html as _html
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
@@ -39,6 +40,7 @@ from .util import (
     as_bool,
     as_list,
     css_class,
+    css_color,
     css_length,
     css_ratio,
     esc,
@@ -48,12 +50,20 @@ from .util import (
     split_pipe,
 )
 
+log = logging.getLogger("mkdocs.plugins.homepage")
+
 #: Every block carries `.md-home`; the kind adds `.md-home--<kind>`.
 ROOT = "md-home"
 
 #: The class on a picture that stands in for an icon.  One definition serves every
 #: slot: circular, sized by `--md-home-icon-size` like the glyph it replaces.
 MARK_IMAGE_CLASS = "md-home__mark-img"
+
+#: The CSS variables that carry an aspect ratio.  Named here because they are
+#: treated differently from every other numeric value: a bare number is a legal
+#: ratio, but YAML turns an unquoted ``4:3`` into 243 -- also a legal ratio --
+#: so they have to be re-checked as numbers inside :func:`style_attr`.
+RATIO_VARS = frozenset({"--md-home-ratio", "--md-home-card-ratio"})
 
 #: Animation names accepted by the ``anim`` block.
 #: The order the compact ``|`` form fills, shared by every link-like list.
@@ -129,9 +139,27 @@ _INT_RE = re.compile(r"^\d+$")
 _TAGS_RE = re.compile(r"<[^>]+>")
 
 
+#: Words that stand for a deliberate blank in a repeatable list.  Written as the
+#: *whole* item, so a card titled ``empty`` still works once it has a pipe
+#: (``- empty | /guide/``).
+GAP_MARKERS = frozenset({"empty", "blank", "gap", "spacer"})
+
+
 # ---------------------------------------------------------------------------
 # prop coercion
 # ---------------------------------------------------------------------------
+def is_gap(item: Any) -> bool:
+    """Whether a coerced list item is a deliberate blank rather than an entry.
+
+    A repeatable block may hold empty positions -- three cards in a four-column
+    grid with the last cell left blank.  A bare ``-`` is the natural YAML for
+    that (it parses to ``null``, and an empty mapping means the same thing), and
+    :data:`GAP_MARKERS` exists because a bare dash is easy to write by accident
+    and impossible to search for.
+    """
+    return not item
+
+
 def as_item(value: Any, fields: Sequence[str]) -> dict:
     """Coerce a list item into a mapping.
 
@@ -146,14 +174,23 @@ def as_item(value: Any, fields: Sequence[str]) -> dict:
     if value is None:
         return {}
     if isinstance(value, str):
+        text = value.strip()
+        if "|" not in text and text.lower() in GAP_MARKERS:
+            return {}
         parts = split_pipe(value)
         return {name: part for name, part in zip(fields, parts) if part}
     return {}
 
 
 def as_items(value: Any, fields: Sequence[str]) -> list:
-    """Coerce a list prop into a list of mappings, dropping empty entries."""
-    return [item for item in (as_item(raw, fields) for raw in as_list(value)) if item]
+    """Coerce a list prop into a list of mappings.
+
+    Empty entries are **kept**: an item with no fields is a blank position, which
+    is how a grid leaves a hole (``columns: 4`` with three cards and a gap) and
+    how a row is pushed to the next line.  Use :func:`is_gap` to tell one from a
+    real entry.
+    """
+    return [as_item(raw, fields) for raw in as_list(value)]
 
 
 def as_columns(value: Any) -> dict:
@@ -231,10 +268,16 @@ def number_parts(value: Any) -> tuple[str, str, str] | None:
 def style_attr(pairs: Mapping[str, Any]) -> str:
     """Build a ``style="..."`` attribute out of ``{css-variable: value}`` pairs.
 
-    A value must be a length, a bare number, an aspect ratio or a
+    A value must be a length, a bare number, an aspect ratio, a colour or a
     :class:`Validated` string.  Everything else is dropped rather than passed
     through, so a prop can never smuggle a second declaration or a ``;`` into the
     attribute.  ``Validated`` is the single, greppable exception.
+
+    Aspect-ratio variables get a dedicated branch because a bare number is a
+    legitimate ratio there *and* because YAML folds an unquoted ``4:3`` into the
+    number 243 -- which is itself a legal ratio, so nothing else would reject it.
+    Routing them through :func:`css_ratio` as numbers (rather than as the strings
+    they arrive as) is what lets that check fire.
     """
     declarations = []
     for name, value in pairs.items():
@@ -242,11 +285,14 @@ def style_attr(pairs: Mapping[str, Any]) -> str:
             continue
         if isinstance(value, Validated):
             text = str(value)
+        elif name in RATIO_VARS:
+            number = as_number(value)
+            text = css_ratio(number) if number is not None else css_ratio(value)
         elif isinstance(value, (int, float)):
             text = str(value)
         else:
             stripped = str(value).strip()
-            text = css_length(stripped) or css_ratio(stripped)
+            text = css_length(stripped) or css_ratio(stripped) or css_color(stripped)
         if text:
             declarations.append(f"{name}:{text};")
     return f' style="{"".join(declarations)}"' if declarations else ""
@@ -630,10 +676,13 @@ class BlockRenderer:
     def _highlights(self, raw: Any, presentation: Presentation) -> str:
         """The small inline stats a hero can carry (``0 dependencies · 2 schemes``)."""
         items = as_items(raw, ("value", "label", "icon"))
-        if not items:
+        if not any(not is_gap(item) for item in items):
             return ""
         cells = []
         for item in items:
+            if is_gap(item):
+                cells.append(self._gap(presentation, 0))
+                continue
             value = first_of(item, "value", "text", "title")
             label = first_of(item, "label", "desc")
             glyph = (
@@ -649,28 +698,88 @@ class BlockRenderer:
             )
         return f'<ul class="md-home__highlights" role="list">{"".join(cells)}</ul>'
 
+    def _gap(self, presentation: Presentation, index: int) -> str:
+        """One deliberate blank in a repeatable grid.
+
+        Not `hidden` and not `display: none` -- the whole point is that the grid
+        keeps the track, so a four-column block with three cards still reads as
+        four columns.  `aria-hidden` because there is nothing to announce, and no
+        reveal attributes for the same reason.
+        """
+        return '<li class="md-home__gap" aria-hidden="true"></li>'
+
+    def _card_colors(self, card: Mapping[str, Any]) -> dict:
+        """The per-scheme colours one card may name for itself.
+
+        This is the one place a block is *allowed* to name a colour, and it is
+        opt-in: nothing here is set unless the author writes it.  The values land
+        in the card's own custom properties, which the stylesheet reads with the
+        derived palette as the fallback -- so a card that names neither is
+        unchanged, and one that names either follows it in both schemes.
+
+        Both schemes are always supplied, because a single inline declaration
+        cannot be overridden by a stylesheet rule: `[data-md-color-scheme]` is a
+        (0,1,0) + (0,1,0) prefix and an inline style beats any of it.  The
+        *indirection* is what makes the scheme a decision the stylesheet can make.
+        """
+        variables: dict[str, Any] = {}
+        for name, keys in (
+            ("--md-home-card-bg", ("bg", "surface", "background_color")),
+            ("--md-home-card-bg-dark", ("bg_dark", "surface_dark", "background_color_dark")),
+            ("--md-home-card-accent", ("glow", "accent", "color")),
+            ("--md-home-card-accent-dark", ("glow_dark", "accent_dark", "color_dark")),
+        ):
+            raw = first_of(card, *keys)
+            if raw is None:
+                continue
+            color = css_color(raw)
+            if color is None:
+                log.warning(
+                    "homepage: card %s: %r is not a colour; expected a hex value "
+                    "(`#4f6bed`), an `rgb()`/`hsl()`/`oklch()` function or a CSS colour name",
+                    name,
+                    raw,
+                )
+                continue
+            variables[name] = Validated(color)
+        return variables
+
     def _cards(self, block: Block) -> str:
         props = block.props
         presentation = self._presentation(block)
         cards = as_items(first_of(props, "cards", "items"), LINK_FIELDS)
-        if not cards:
+        if not any(not is_gap(card) for card in cards):
             raise BlockError("a cards block needs a `cards:` list with at least one item")
 
         style = str(first_of(props, "card_style", "style", default="elevated")).strip().lower()
         if style not in ("elevated", "outlined", "filled", "glass", "plain"):
             style = "elevated"
+
+        layout = str(first_of(props, "layout", "card_layout", default="grid")).strip().lower()
+        if layout not in ("grid", "rows"):
+            layout = "grid"
+
         cells = "".join(
-            self._card(block, presentation, card, index) for index, card in enumerate(cards)
+            self._card(block, presentation, card, index, layout) for index, card in enumerate(cards)
         )
         grid = (
-            f'<ul class="md-home__grid md-home__cards md-home__cards--{esc(style)}"'
+            f'<ul class="md-home__grid md-home__cards md-home__cards--{esc(style)}'
+            f' md-home__cards--{esc(layout)}"'
             f'{self.grid_attrs(block)} role="list">{cells}</ul>'
         )
         return self._wrap(block, self._header(block, presentation) + grid, presentation)
 
     def _card(
-        self, block: Block, presentation: Presentation, card: Mapping[str, Any], index: int
+        self,
+        block: Block,
+        presentation: Presentation,
+        card: Mapping[str, Any],
+        index: int,
+        layout: str = "grid",
     ) -> str:
+        if is_gap(card):
+            return self._gap(presentation, index)
+
         theme = normalize_theme(card.get("theme"))
         link = first_of(card, "link", "url", "href")
         title = first_of(card, "title", "heading")
@@ -679,6 +788,7 @@ class BlockRenderer:
         badge = first_of(card, "badge", "tag", "label")
         icon_name = card.get("icon")
         image = first_of(card, "image", "img", "cover")
+        aside = first_of(card, "body", "aside", "more", "detail")
 
         cell_classes = ["md-home__cell"]
         span = card.get("span") or card.get("cols")
@@ -687,15 +797,30 @@ class BlockRenderer:
         if as_bool(card.get("featured"), False):
             cell_classes.append("md-home__cell--featured")
 
+        # The card's OWN aspect ratio.  `ratio` used to mean the cover image's,
+        # which left no way to say "make the card itself a 4:3 tile" -- the thing
+        # a wall of even tiles actually needs.  The cover keeps `image_ratio`,
+        # and the block-level `ratio` is still the default for covers.
+        #
+        # Validated once, here, and the class is keyed off the *validated* value:
+        # otherwise a `ratio:` that was rejected would still mark the card as
+        # sized and stretch it, which is the failure the caller cannot see.
+        ratio = css_ratio(card.get("ratio")) if card.get("ratio") is not None else None
+
         card_classes = classes(
             "md-home__card",
             "md-home__card--ring",
             f"{ROOT}--theme-{theme}" if theme else "",
+            "md-home__card--sized" if ratio else "",
             css_class(card.get("class")),
         )
         attrs = []
         if presentation.tilt:
             attrs.append(f'data-home-tilt="{esc(presentation.tilt)}"')
+
+        variables = {"--md-home-card-ratio": Validated(ratio)} if ratio else {}
+        variables.update(self._card_colors(card))
+        style = style_attr(variables)
 
         parts = []
         if image:
@@ -704,7 +829,8 @@ class BlockRenderer:
                 + self._figure(
                     as_item(image, ("src", "caption", "alt")),
                     ratio=str(
-                        first_of(card, "ratio", default=None)
+                        first_of(card, "image_ratio", "cover_ratio", default=None)
+                        or block.props.get("image_ratio")
                         or block.props.get("ratio")
                         or "16/9"
                     ),
@@ -746,9 +872,31 @@ class BlockRenderer:
             f'<span class="md-home__card-inner">{"".join(parts)}</span>'
         )
         if link:
-            element = f'<a class="{card_classes}" {url_attrs(card, link)} {" ".join(attrs)}>{inner}</a>'
+            element = (
+                f'<a class="{card_classes}" {url_attrs(card, link)} '
+                f'{" ".join(attrs)}{style}>{inner}</a>'
+            )
         else:
-            element = f'<span class="{card_classes}" {" ".join(attrs)}>{inner}</span>'
+            element = f'<span class="{card_classes}" {" ".join(attrs)}{style}>{inner}</span>'
+
+        if layout == "rows":
+            # Card on one side, its own prose on the other -- the showcase
+            # arrangement, with a card where the picture would be.  An item with
+            # no `body:` still reserves the pane, which is what keeps a column of
+            # these aligned when one row has nothing to say yet.
+            body = self.block(aside)
+            pane = (
+                f'<div class="md-home__card-aside md-home__prose md-typeset">{body}</div>'
+                if body
+                else '<div class="md-home__card-aside" aria-hidden="true"></div>'
+            )
+            cell_classes.append("md-home__cell--row")
+            element = (
+                f'<div class="md-home__card-row'
+                f'{" md-home__card-row--reverse" if as_bool(card.get("reverse"), False) else ""}">'
+                f'<div class="md-home__card-pane">{element}</div>{pane}</div>'
+            )
+
         return (
             f'<li class="{classes(*cell_classes)}"{self._item_attrs(presentation, index)}>'
             f"{element}</li>"
@@ -777,6 +925,9 @@ class BlockRenderer:
 
         rendered = []
         for index, row in enumerate(rows):
+            if is_gap(row):
+                rendered.append(self._gap(presentation, index))
+                continue
             theme = normalize_theme(row.get("theme"))
             image = first_of(row, "image", "img", "src", "cover")
             if not image:
@@ -805,7 +956,6 @@ class BlockRenderer:
                     for bullet in bullets
                 )
                 panes.append(f'<ul class="md-home__bullets" role="list">{marks}</ul>')
-
             link = first_of(row, "link", "url", "href")
             if link:
                 text = self.inline(first_of(row, "link_text", default=None) or link_text)
@@ -837,14 +987,13 @@ class BlockRenderer:
 
         listing = f'<div class="md-home__showcase">{"".join(rendered)}</div>'
         return self._wrap(block, self._header(block, presentation) + listing, presentation)
-
     def _testimonials(self, block: Block) -> str:
         props = block.props
         presentation = self._presentation(block)
         items = as_items(
             first_of(props, "testimonials", "items", "quotes"), ("quote", "name", "role", "avatar")
         )
-        if not items:
+        if not any(not is_gap(item) for item in items):
             raise BlockError("a testimonials block needs a `testimonials:` list with at least one item")
 
         style = str(props.get("style") or "cards").strip().lower()
@@ -854,6 +1003,9 @@ class BlockRenderer:
 
         cells = []
         for index, item in enumerate(items):
+            if is_gap(item):
+                cells.append(self._gap(presentation, index))
+                continue
             theme = normalize_theme(item.get("theme"))
             quote = first_of(item, "quote", "text", "desc")
             if not quote:
@@ -915,7 +1067,7 @@ class BlockRenderer:
         items = as_items(
             first_of(props, "logos", "items", "brands"), ("icon", "name", "link", "desc")
         )
-        if not items:
+        if not any(not is_gap(item) for item in items):
             raise BlockError(
                 "a logos block needs a `logos:` list, e.g. `- simple/github | GitHub | https://github.com`"
             )
@@ -934,6 +1086,11 @@ class BlockRenderer:
             scrolls the row past is decoration -- a keyboard user should not have
             to walk through every brand twice.
             """
+            if is_gap(item):
+                # A blank in a logo strip is a spacer, so it has to survive the
+                # duplicate pass -- a gap in one period and not the other would
+                # put the loop out of phase.
+                return '<li class="md-home__logo-item" aria-hidden="true"></li>'
             name = first_of(item, "name", "title", "text")
             link = first_of(item, "link", "url", "href")
             # In a marquee the whole point is that the pictures are about to be
@@ -1029,7 +1186,7 @@ class BlockRenderer:
         props = block.props
         presentation = self._presentation(block)
         features = as_items(first_of(props, "features", "items"), LINK_FIELDS)
-        if not features:
+        if not any(not is_gap(feature) for feature in features):
             raise BlockError("a features block needs a `features:` list with at least one item")
 
         icon_style = str(first_of(props, "icon_style", "style", default="soft")).strip().lower()
@@ -1038,6 +1195,9 @@ class BlockRenderer:
 
         cells = []
         for index, feature in enumerate(features):
+            if is_gap(feature):
+                cells.append(self._gap(presentation, index))
+                continue
             theme = normalize_theme(feature.get("theme"))
             link = first_of(feature, "link", "url", "href")
             title = first_of(feature, "title", "heading")
@@ -1116,7 +1276,7 @@ class BlockRenderer:
         props = block.props
         presentation = self._presentation(block)
         items = as_items(first_of(props, "images", "items"), ("src", "caption", "alt"))
-        if not items:
+        if not any(not is_gap(item) for item in items):
             items = self._images_from_body(block.body)
         if not items:
             raise BlockError("a gallery block needs an `images:` list or a body of Markdown images")
@@ -1126,8 +1286,13 @@ class BlockRenderer:
             mode = "scroll"
         ratio = str(props.get("ratio") or "16/9")
 
+        # A blank slide is a hole in the strip, and in a paging gallery it is a
+        # *page* -- so it keeps the slide and its width, and only the figure goes.
         slides = "".join(
-            f'<li class="md-home__slide">{self._figure(item, ratio=ratio)}</li>' for item in items
+            f'<li class="md-home__slide">{self._figure(item, ratio=ratio)}</li>'
+            if not is_gap(item)
+            else '<li class="md-home__slide" aria-hidden="true"></li>'
+            for item in items
         )
         if mode == "grid":
             grid = (
@@ -1273,12 +1438,15 @@ class BlockRenderer:
         props = block.props
         presentation = self._presentation(block)
         stats = as_items(first_of(props, "stats", "items"), ("value", "label", "icon"))
-        if not stats:
+        if not any(not is_gap(item) for item in stats):
             raise BlockError("a stats block needs a `stats:` list with at least one item")
 
         animate = as_bool(props.get("animate"), True) and self.options.get("count", True)
         cells = []
         for index, stat in enumerate(stats):
+            if is_gap(stat):
+                cells.append(self._gap(presentation, index))
+                continue
             theme = normalize_theme(stat.get("theme"))
             raw = stat.get("value")
             parts = number_parts(raw) if animate else None
@@ -1315,7 +1483,7 @@ class BlockRenderer:
         props = block.props
         presentation = self._presentation(block)
         steps = as_items(first_of(props, "steps", "items"), LINK_FIELDS)
-        if not steps:
+        if not any(not is_gap(step) for step in steps):
             raise BlockError("a steps block needs a `steps:` list with at least one item")
 
         direction = str(props.get("direction") or "vertical").strip().lower()
@@ -1325,6 +1493,9 @@ class BlockRenderer:
 
         cells = []
         for index, step in enumerate(steps):
+            if is_gap(step):
+                cells.append(self._gap(presentation, index))
+                continue
             theme = normalize_theme(step.get("theme"))
             # A step marker is an icon *or* a number, and either may be replaced by
             # a picture -- the marker slot is the same size whatever it holds.
@@ -1356,7 +1527,7 @@ class BlockRenderer:
         props = block.props
         presentation = self._presentation(block)
         links = as_items(first_of(props, "links", "items"), LINK_FIELDS)
-        if not links:
+        if not any(not is_gap(link) for link in links):
             raise BlockError("a links block needs a `links:` list with at least one item")
 
         style = str(props.get("style") or "list").strip().lower()
@@ -1365,6 +1536,9 @@ class BlockRenderer:
 
         cells = []
         for index, link in enumerate(links):
+            if is_gap(link):
+                cells.append(self._gap(presentation, index))
+                continue
             text = first_of(link, "text", "title", "label")
             href = first_of(link, "link", "url", "href")
             desc = first_of(link, "desc", "description", "subtitle")

@@ -90,6 +90,145 @@ cards:
     link: /guide/
 ```
 
+## 间距与空位
+
+**任何可以重复的列表都允许留空。** 空位占位但什么都不画，列数按你写的算：
+
+```yaml
+cards:
+  - 第一张
+  - 第二张
+  -             # 空
+```
+
+四种写法等价：`-`、`- {}`、`- empty`、`- blank`。需要一张**真的叫 empty**
+的条目时，只要带上分隔符就还是条目：`- empty | /guide/`。
+
+关键在**尺寸按 `columns` 算**：下面 4 列只有 3 张卡，卡片宽度就是四列的宽度，
+不会因为少一张而变宽——第 4 个位置是空的，但第 4 列仍然算数：
+
+```homepage-cards
+columns: 4
+cards:
+  - title: 一
+    icon: layers-outline
+    desc: 4 列里的第 1 张
+  - title: 二
+    icon: view-gallery-outline
+    desc: 4 列里的第 2 张
+  - title: 三
+    icon: shape-outline
+    desc: 4 列里的第 3 张
+  -
+```
+
+`columns` 仍然是响应式的：位置排不下时列数会自然减少（一列最小 8.5em），
+但**只要放得下，就一定是你要的那个列数**——`columns: 4` 和 `columns: 3`
+在宽屏上是两种不同的宽度。
+
+## 卡片的宽高比
+
+卡片自己的 `ratio` 控制**整张卡**的外形；封面图的 `image_ratio` 单独控制：
+
+```yaml
+cards:
+  - title: 方卡
+    ratio: 1/1            # 整张卡
+    image: /cover.svg
+    image_ratio: 16/9     # 封面图
+```
+
+写 `ratio` 的卡片不再被同行里最高的那张拉齐（否则行高会盖掉比例），
+所以同一行里不同比例的卡片会各自按自己的比例显示、顶对齐。内容比框高时
+卡片内部可以滚动，页脚不会被裁掉。
+
+```homepage-cards
+columns: 3
+cards:
+  - title: '4:3'
+    ratio: 4/3
+    icon: shape-outline
+    desc: 整张卡是 4:3
+  - title: '1:1'
+    ratio: 1/1
+    icon: view-gallery-outline
+    desc: 方形卡片
+  - title: '2:3'
+    ratio: 2/3
+    icon: image-outline
+    desc: 竖长卡片
+```
+
+!!! warning "比例要写斜杠，不要写冒号"
+    想写 `4:3` 的时候写 **`4/3`**。YAML 会把不带引号的 `4:3` 当成
+    *六十进制数*（`4*60+3 = 243`），于是卡片会高到 243 倍宽；插件会识别
+    这种值、在构建时报警并回退到默认比例。写成 `"4:3"`（带引号）也可以。
+
+## 一卡一栏
+
+`layout: rows` 把卡片摊成一行行：左边卡片，右边是它的说明文字（Markdown）。
+没写 `body` 的行右侧留空，这样连续几行的卡片仍然对齐。
+
+```homepage-cards
+layout: rows
+cards:
+  - title: 左边卡片
+    icon: file-document-outline
+    desc: 卡片本体
+    body: |
+      ### 右边是正文
+
+      可以写任意 Markdown：
+
+      - 列表
+      - **强调**
+  - title: 这一行没有说明
+    icon: text-box-outline
+    desc: 右边留空，但卡片宽度不变
+  - title: 这一段反过来
+    icon: refresh
+    desc: "reverse: true"
+    reverse: true
+    body: |
+      图左文右，或者反过来。
+```
+
+## 单张卡片的配色
+
+卡片可以**自己**指定底色和光色，不跟主题走：
+
+| 键 | 说明 |
+| --- | --- |
+| `bg` | 底色，浅色与深色都用它 |
+| `bg_dark` | 只在深色模式覆盖 `bg` |
+| `glow` | 光照（描边、光晕、强调色），同 `bg` |
+| `glow_dark` | 只在深色模式覆盖 `glow` |
+
+别名：`surface` = `bg`，`accent` / `color` = `glow`。值是任意合法 CSS 颜色
+（`#4f6bed`、`rgb(...)`、`oklch(...)`、`rebeccapurple`），写错会在构建时报警并忽略。
+
+所以**只写 `bg`** 是两种模式都换成它，**只写 `bg_dark`** 才是"只有深色模式变，
+浅色模式继续用主题推导的颜色"：
+
+```homepage-cards
+columns: 3
+cards:
+  - title: 只写 bg
+    desc: 浅色与深色都换成这个底色
+    bg: '#eef1ff'
+    glow: '#4f6bed'
+  - title: 只写 bg_dark
+    desc: 只有深色模式变，浅色模式用主题推导
+    bg_dark: '#161a2b'
+    glow_dark: '#8fa4ff'
+  - title: 两个都写
+    desc: 切换明暗可以看到各用各的
+    bg: '#eafaf1'
+    bg_dark: '#122117'
+    glow: '#12a150'
+    glow_dark: '#4ade80'
+```
+
 ## showcase
 
 图文交替的叙事行。每行一个主张配一张图，左右交替，视线自然地向下走。

@@ -102,7 +102,7 @@ cards:
 | 区块 | 用途 | 主要属性 |
 | --- | --- | --- |
 | `hero` | 首屏 | `eyebrow` `title` `subtitle` `image` `actions` `highlights` `mirror` |
-| `cards` | 卡片墙（3D 倾斜 + 高光） | `cards` `card_style` `columns` `min_cols` |
+| `cards` | 卡片墙（3D 倾斜 + 高光），支持一卡一栏与单卡配色 | `cards` `card_style` `columns` `min_cols` `layout` |
 | `showcase` | 图文交替的叙事行 | `showcase` `alternate` `reverse` `link_text` |
 | `features` | 无边框特性网格 | `features` `icon_style` `columns` |
 | `testimonials` | 引用 / 评价 | `testimonials` `style` `rating` |
@@ -137,10 +137,22 @@ cards:
 | `pattern` | `aurora` `grid` `dots` `rays` / `none`（`hero` 与 `cta` 默认 `aurora`） |
 | `gradient` | 标题使用渐变文字 |
 | `gap` | 栅格间距 |
-| `columns` | **最多**几列；放不下时自动减列，不需要媒体查询 |
-| `min_cols` | 单个栅格项的最小宽度，默认 `13em` |
+| `columns` | 列数；**尺寸按这个列数算**，放不下时才自动减列 |
+| `min_cols` | 没写 `columns` 时单个栅格项的最小宽度，默认 `13em` |
+| `ratio` | 该区块图片的默认宽高比（比例写斜杠：`16/10`） |
 
 完整属性表见 [区块总览](demo/docs/guide/blocks.md)。
+
+### 空位与列数
+
+所有可重复的列表都允许留空，`-`、`- {}`、`- empty`、`- blank` 等价。
+空位占住自己的位置，**列数不变**：4 列里只放 3 张卡，卡片宽度仍然是四列的宽度，
+不会因为少一张而把三张撑宽。
+
+### 比例写斜杠
+
+`ratio: 4/3` 或 `ratio: "4:3"`。YAML 会把不带引号的 `4:3` 读成六十进制数 243，
+而 243 是合法的 CSS 比例——插件会认出这个区间、报警并回退到默认值。
 
 ## 微调
 
@@ -161,10 +173,42 @@ plugins:
 | `--md-home-radius-sm` | `0.35em` | 小圆角：图标底、图片 |
 | `--md-home-gap` | `0.9em` | 栅格间距 |
 | `--md-home-pad` | `1.2em` | 面板内边距 |
-| `--md-home-min` | `13em` | 栅格项最小宽度 |
+| `--md-home-min` | `13em` | 栅格项最小宽度（未指定列数时） |
+| `--md-home-min-narrow` | `8.5em` | 指定了 `columns` 时的硬底线 |
 
 间距是一条六档阶梯（`--md-home-space-1` … `-6`，`0.4em` → `2.5em`），
 细节见 [设计约定](demo/docs/reference/index.md)。
+
+## 卡片
+
+单张卡片除了通用的 `title` / `desc` / `icon` / `link` / `tags` / `theme` / `image`，
+还可以控制自己的外形和颜色：
+
+```yaml
+cards:
+  - title: 一张 4:3 的卡片
+    icon: shape-outline
+    ratio: 4/3                 # 整张卡的比例（封面图的单独用 image_ratio）
+  - title: 一卡一栏
+    body: |                    # layout: rows 时，右栏是这段 Markdown
+      右边是**正文**。
+    reverse: true              # 左右对调
+  - title: 自己的颜色
+    bg: '#eef1ff'              # 两套模式都用它
+    bg_dark: '#161a2b'         # 只在深色模式覆盖
+    glow: '#4f6bed'            # 描边、光晕、强调色
+    glow_dark: '#8fa4ff'
+```
+
+| 属性 | 说明 |
+| --- | --- |
+| `ratio` | 整张卡的宽高比；内部内容过高时卡片内部滚动 |
+| `image_ratio` / `cover_ratio` | 封面图的比例（覆盖块上的 `ratio`） |
+| `layout: rows` | 卡片在左、说明文字在右；没写 `body` 的行右栏留空，保持对齐 |
+| `body` / `aside` | `layout: rows` 时的右栏，用站点自己的 Markdown 渲染 |
+| `reverse` | 单行左右对调 |
+| `bg` / `bg_dark` | 底色（`surface` 是别名；浅色与深色分开写） |
+| `glow` / `glow_dark` | 光照（`accent` / `color` 是别名） |
 
 ## 图标
 
@@ -231,7 +275,11 @@ plugins:
   `.md-home` 内部被重设，靠**选择器权重**取胜，而不是靠样式表加载顺序。
 - **正文区不受重置影响。** 渲染 Markdown 的容器带 `.md-home__prose`，把列表符号、段落
   间距和标题层级交还给文章本身的节奏。
-- **栅格没有断点。** `columns: 3` 是最多三列：装得下就三列，装不下自动两列、一列。
+- **栅格没有断点。** 写了 `columns: N`，尺寸就按 N 算：`repeat(auto-fill, …)` 保留没有
+  元素落进去的轨道，所以 4 列里只放 3 张卡时卡片仍然是四列的宽度，空位用 `- blank`
+  明说。只有窄到放不下时（一列最小 `8.5em`）才减少列。
+- **作者写的颜色是唯一例外。** 单张卡片可以用 `bg` / `bg_dark` / `glow` / `glow_dark`
+  直接指定颜色，不跟主题走（两套模式的变量都会发出去，由样式表按方案选一个）。
 - **渲染安全。** 进入属性的值一律转义；进入 `style` 的值经过白名单校验；`href`/`src`
   拒绝 `javascript:`、`data:` 之类的协议。
 

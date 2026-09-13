@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import html
+import logging
 import re
 from typing import Any, Iterable, Mapping
+
+log = logging.getLogger("mkdocs.plugins.homepage")
 
 _TRUTHY = frozenset({"1", "true", "yes", "y", "t", "on", "enable", "enabled"})
 _FALSY = frozenset({"", "0", "false", "no", "n", "f", "off", "disable", "disabled", "none"})
@@ -20,8 +23,76 @@ _LENGTH_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*(em|rem|px|%|vh|vw|ch|fr)?$")
 #: ``16/10``, ``16 / 9``, ``4:3`` -- the aspect ratios authors actually type.
 _RATIO_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*[/:]\s*(\d+(?:\.\d+)?)$")
 
+#: The smallest bare number that can only be a ``a:b`` mangled by YAML's
+#: sexagesimal reading.  ``1:1`` is the smallest unquoted ratio an author could
+#: write that YAML would fold into a number, and it comes out as 61.  See
+#: :func:`css_ratio`.
+_SEXAGESIMAL_FLOOR = 61
+
 #: URL schemes that must never end up in an ``href``/``src``.
 _SCHEME_RE = re.compile(r"^(?:javascript|vbscript|data|blob|file)\s*:", re.I)
+
+#: A hex colour: ``#abc``, ``#abcd``, ``#aabbcc``, ``#aabbccdd``.
+_HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$", re.I)
+
+#: A colour function.  The character class is the whole guard: no ``;``, ``{``,
+#: ``}``, quotes or backslashes can survive it, so the value cannot close the
+#: declaration or the style attribute and start another one.
+_COLOR_FUNCTION_RE = re.compile(
+    r"^(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|light-dark)"
+    r"\([^;{}<>\"'\\]*\)$",
+    re.I,
+)
+
+#: The CSS named colours.  A whitelist rather than `[a-z]+` on purpose: an
+#: unknown name is a *typo*, and a typo that produces an invalid declaration is
+#: dropped by the browser without a word.  ``transparent`` and ``currentcolor``
+#: are included because they are legitimate values, not colours.
+NAMED_COLORS = frozenset(
+    """
+    aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond
+    blue blueviolet brown burlywood cadetblue chartreuse chocolate coral
+    cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray
+    darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid
+    darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey
+    darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue
+    firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod
+    gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki
+    lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan
+    lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon
+    lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue
+    lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue
+    mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen
+    mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin
+    navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod
+    palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum
+    powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon
+    sandybrown seagreen seashell sienna silver skyblue slateblue slategray
+    slategrey snow springgreen steelblue tan teal thistle tomato transparent
+    turquoise violet wheat white whitesmoke yellow yellowgreen currentcolor
+    """.split()
+)
+
+
+def css_color(value: Any) -> str | None:
+    """Validate a CSS colour, or return ``None``.
+
+    Same contract as :func:`css_length`: the value is destined for an inline
+    custom property, so nothing may escape the declaration.  Three shapes are
+    accepted -- a hex literal, one of the standard colour functions, and a named
+    colour from :data:`NAMED_COLORS`.  Anything else is a typo or an injection
+    attempt, and either way the caller reports it instead of emitting a
+    declaration the browser will silently drop.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if _HEX_COLOR_RE.match(text) or _COLOR_FUNCTION_RE.match(text):
+        return text
+    lowered = text.lower()
+    return lowered if lowered in NAMED_COLORS else None
 
 #: Picture formats an ``icon:`` value may point at instead of naming a glyph.
 IMAGE_SUFFIXES = frozenset(
@@ -65,10 +136,26 @@ def css_ratio(value: Any) -> str | None:
     ``ratio: 16/10``, ``16 / 9``, ``4:3`` and a bare number all mean the same
     thing to an author; a length validator rejects every one of them, which is
     how a silently-ignored ``ratio:`` prop is born.
+
+    The one shape that is NOT accepted is a bare number large enough to be a
+    ``a:b`` that YAML already evaluated.  YAML 1.1 reads ``4:3`` as *sexagesimal*
+    -- ``4 * 60 + 3`` -- so ``ratio: 4:3`` (unquoted, the way anyone would type
+    it) arrives here as ``243``, and ``243`` is a perfectly valid CSS ratio: the
+    card rendered 243 times taller than it was wide, with no warning anywhere.
+    Since no one sizes a card at 61:1 or beyond, that range is treated as the
+    authoring mistake it is, and the prop falls back to its default instead.
     """
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
+        if float(value).is_integer() and value >= _SEXAGESIMAL_FLOOR:
+            log.warning(
+                "homepage: ratio %r looks like a `a:b` that YAML read as a number "
+                "(YAML reads `4:3` as 4*60+3 == 243); quote it or use a slash, e.g. "
+                '"4/3"',
+                value,
+            )
+            return None
         return f"{float(value):g}" if value > 0 else None
     match = _RATIO_RE.match(str(value).strip())
     if not match:

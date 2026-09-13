@@ -1038,7 +1038,273 @@ def test_the_strip_does_not_inherit_the_sites_link_colour():
         )
 
 
-# -- behaviours a future edit could quietly drop ---------------------------
+# -- spacing that survives an author's own layout --------------------------
+def test_the_list_indent_reset_beats_the_themes_direction_prefix():
+    """Measured in a browser: every cell was 20px narrower than its own track.
+
+    Material indents a list item with `[dir="ltr"] .md-typeset ul li` at (0,2,2).
+    A plain `.md-typeset .md-home li` reset is (0,2,1) and simply loses, so every
+    `<li>` in the widget -- every grid cell, marquee slot and slide -- was pushed
+    20px right of the track it had just been placed in, and a card wall stopped
+    20px short of the block edge while its own heading did not.
+    """
+    theme_score = max(
+        specificity(selector)
+        for selector in (
+            '[dir="ltr"] .md-typeset ul li',
+            '[dir="ltr"] .md-typeset ol li',
+            '[dir="rtl"] .md-typeset ul li',
+            '[dir="rtl"] .md-typeset ol li',
+        )
+    )
+    winning = []
+    for _, selector, body in css_rules():
+        if declared(body, "margin") != "0" and declared(body, "margin-left") != "0":
+            continue
+        for part in split_selector_list(selector):
+            if last_compound(part) == "li" and ".md-home" in part:
+                winning.append((part, specificity(part)))
+    assert winning, "the list-item margin reset is gone entirely"
+    assert max(score for _, score in winning) > theme_score, (
+        f"the strongest reset only scores {max(score for _, score in winning)} against "
+        f"the theme's {theme_score}: Material's indent wins and every item is inset"
+    )
+
+
+def test_a_declared_column_count_does_not_collapse():
+    """`auto-fit` collapses the tracks nothing landed in; `auto-fill` keeps them.
+
+    Three cards in a `columns: 4` grid used to become three *wider* cards, so the
+    grid the author declared was not the grid they got and a card wall lost its
+    alignment.  The fix is one word, which is exactly the kind of thing that gets
+    "tidied" back.
+    """
+    sized = [
+        rule
+        for rule in css_rules()
+        if "data-home-cols" in rule[1] and "grid-template-columns" in rule[2]
+    ]
+    assert sized, "the explicit-columns rule is gone"
+    for _, selector, body in sized:
+        assert "auto-fill" in declared(body, "grid-template-columns"), selector
+        assert "auto-fit" not in declared(body, "grid-template-columns"), selector
+
+    # The content-driven grid keeps `auto-fit`: with no declared count there is
+    # nothing to preserve, and a trailing gap would be arbitrary.
+    implicit = [
+        rule
+        for rule in css_rules()
+        if "md-home__grid" in rule[1]
+        and "grid-template-columns" in rule[2]
+        and "data-home-cols" not in rule[1]
+    ]
+    assert implicit, "the intrinsic grid rule is gone"
+    for _, selector, body in implicit:
+        assert "auto-fit" in declared(body, "grid-template-columns"), selector
+
+
+def test_a_declared_count_is_not_vetoed_by_the_comfortable_floor():
+    """Measured in a browser: `columns: 4` rendered exactly like `columns: 3`.
+
+    The track floor and the declared count compete multiplicatively: N tracks
+    exist only while `N x min + (N-1) x gap` fits in the container.  With the
+    comfortable 13em floor that threshold for four columns is ~875px of content
+    column -- more than a Material content column ever gets -- so the fourth
+    track never appeared at any viewport and `columns: 4` was indistinguishable
+    from `columns: 3`, i.e. exactly the "size it as 4, not 3" rule inverted.
+    """
+    sized = [
+        body
+        for _, selector, body in css_rules()
+        if "data-home-cols" in selector and "grid-template-columns" in body
+    ]
+    assert sized, "the explicit-columns rule is gone"
+    joined = " ".join(re.sub(r"\s+", "", body) for body in sized)
+    assert "var(--md-home-min-narrow)" in joined, (
+        "the explicit-columns rule uses the comfortable floor again, so a declared "
+        "count larger than 3 can never take effect: " + joined
+    )
+    assert "var(--md-home-min)," not in joined and "var(--md-home-min)" not in joined, joined
+
+    # The narrowing floor has to be genuinely narrower, or nothing changed.
+    root = " ".join(body for _, selector, body in css_rules() if selector.strip() == ":root")
+    found = dict(re.findall(r"(--md-home-min(?:-narrow)?)\s*:\s*([0-9.]+)em", root))
+    assert {"--md-home-min", "--md-home-min-narrow"} <= set(found), found
+    assert float(found["--md-home-min-narrow"]) < float(found["--md-home-min"]), found
+
+
+def test_the_blank_cell_draws_nothing():
+    """A blank that keeps a border or a shadow is not air, it is a stray box."""
+    gaps = [
+        rule
+        for rule in css_rules()
+        if "md-home__gap" in rule[1]
+    ]
+    assert gaps, "the gap cell has no styles, so it inherits the surface it sits on"
+    for _, selector, body in gaps:
+        for prop in ("background", "border", "box-shadow"):
+            value = declared(body, prop)
+            if value:
+                assert value in ("none", "0", "transparent"), f"{selector}: {prop}: {value}"
+
+
+# -- a card may dress itself ------------------------------------------------
+def test_the_card_palette_override_comes_after_the_rule_it_overrides():
+    """Order is load-bearing, and getting it wrong is silent.
+
+    `background-color` was declared on the base `.md-home__card` rule (0,1,0) and
+    the accent override is the *same* specificity, so whichever came last in the
+    file won.  Written in the wrong order the card kept `--md-default-bg-color`
+    and `bg:` did nothing -- no warning, nothing to fail.  Arithmetic cannot see
+    this one; the index can.
+    """
+    rules = list(css_rules())
+
+    def bare(selector: str) -> bool:
+        # The *unconditional* rule for the card itself: no `:hover`, no prefix.
+        return selector.strip() == ".md-home__card"
+
+    base = [
+        index
+        for index, (_, selector, body) in enumerate(rules)
+        if bare(selector) and "var(--md-home-card-bg" in declared(body, "background-color")
+    ]
+    assert base, "the card no longer reads its own background from --md-home-card-bg"
+
+    override = [
+        index
+        for index, (_, selector, body) in enumerate(rules)
+        if bare(selector) and "var(--md-home-card-accent" in declared(body, "--md-home-accent")
+    ]
+    assert override, "the card no longer reads its own accent from --md-home-card-accent"
+    assert min(override) > max(base), (
+        "the accent override is written before the base card rule; if it ever joins it "
+        "there, a later `background-color` wins over the author's `bg:`"
+    )
+
+    # Nothing may re-state an unconditional `background-color` after this point,
+    # which is the exact edit that would break it again.
+    later = [
+        index
+        for index, (_, selector, body) in enumerate(rules)
+        if index > max(override) and bare(selector) and declared(body, "background-color")
+    ]
+    assert not later, f"a bare `.md-home__card` background rule follows the override: {later}"
+
+    # The dark scheme reads the same variables one step later, or it never wins.
+    slate = [
+        index
+        for index, (_, selector, body) in enumerate(rules)
+        if "slate" in selector
+        and subject_classes(selector) == {".md-home__card"}
+        and declared(body, "background-color")
+    ]
+    assert slate and min(slate) > max(override), slate
+
+
+def test_both_schemes_are_read_through_the_same_indirection():
+    """One inline declaration cannot be overridden by a stylesheet rule.
+
+    So each scheme has to read its own variable *with the other as its fallback*,
+    which is what lets an author write `bg:` alone (both schemes) or `bg_dark:`
+    alone (the dark one) and mean it.
+    """
+    slate = [
+        re.sub(r"\s+", "", body)
+        for _, selector, body in css_rules()
+        if "slate" in selector and subject_classes(selector) == {".md-home__card"}
+    ]
+    assert slate, "the dark-scheme card rule is gone"
+    joined = " ".join(slate)
+    for name in ("--md-home-card-bg", "--md-home-card-accent"):
+        assert f"var({name}-dark," in joined, joined
+        assert f"var({name}," in joined, f"{name} has no fallback to the other scheme: {joined}"
+
+
+def test_the_slate_rule_out_scores_the_plain_card_rule():
+    """Otherwise the dark colours never apply at all."""
+    plain = [
+        specificity(selector)
+        for _, selector, body in css_rules()
+        if selector.strip() == ".md-home__card" and declared(body, "background-color")
+    ]
+    slate = [
+        specificity(selector)
+        for _, selector, body in css_rules()
+        if "slate" in selector and subject_classes(selector) == {".md-home__card"}
+    ]
+    assert plain and slate, (plain, slate)
+    assert max(slate) > max(plain), (slate, plain)
+
+
+def test_a_sized_card_lets_its_body_give_instead_of_overflowing():
+    """`aspect-ratio` with content taller than the box has to put the give
+    somewhere, or the footer is simply cut off."""
+    sized = [rule for rule in css_rules() if "md-home__card--sized" in rule[1]]
+    assert sized, "the sized-card rule is gone"
+    assert any(
+        declared(body, "aspect-ratio") == "var(--md-home-card-ratio)" for _, _, body in sized
+    ), sized
+    overflow = [declared(body, "overflow") for _, _, body in sized if declared(body, "overflow")]
+    assert any(value == "auto" for value in overflow), (
+        f"a sized card clips its content with no escape hatch: {overflow}"
+    )
+
+
+def test_a_sized_card_opts_out_of_the_stretch_that_hides_its_ratio():
+    """Measured in a browser: all three `ratio:` values rendered the same box.
+
+    `.md-home__cell` is a flex row (that is what gives unsized cards their equal
+    heights), so the card is a flex item and `align-self: stretch` hands it a
+    *definite* height.  A definite height beats `aspect-ratio` outright: 4/3, 1/1
+    and 2/3 all came out 219.7x329.6 -- the tallest card in the row -- with
+    nothing to say the prop had been discarded.  `align-self: start` is what
+    makes the ratio decide the box, so it is load-bearing, not cosmetic.
+    """
+    sized = [
+        (selector, body)
+        for _, selector, body in css_rules()
+        if "md-home__card--sized" in selector and declared(body, "aspect-ratio")
+    ]
+    assert sized, "the sized-card rule is gone"
+    for selector, body in sized:
+        assert declared(body, "align-self") == "start", (
+            f"{selector!r} declares an aspect ratio without opting out of the flex "
+            "stretch, so the ratio is silently ignored"
+        )
+
+
+def test_the_row_layout_is_one_column_of_two_up_rows():
+    """A row is a two-track grid once there is room, and one above that."""
+    rows = [rule for rule in css_rules() if "md-home__cards--rows" in rule[1]]
+    assert rows, "the rows layout has no styles"
+    assert any(
+        declared(body, "grid-template-columns") == "minmax(0, 1fr)" for _, _, body in rows
+    ), rows
+
+    pair = [
+        (selector, body, context)
+        for context, selector, body in css_rules()
+        if subject_classes(selector) == {".md-home__card-row"}
+        and "minmax(0, 1fr) minmax(0, 1fr)" in declared(body, "grid-template-columns")
+    ]
+    assert pair, "the card row never becomes two-up"
+    for selector, _, context in pair:
+        assert "min-width" in context, f"{selector!r} is two-up at every width: {context!r}"
+
+    single = [
+        (selector, body, context)
+        for context, selector, body in css_rules()
+        if subject_classes(selector) == {".md-home__card-row"}
+        and "min-width" not in context
+        and declared(body, "grid-template-columns")
+    ]
+    assert single, "the card row has no narrow-screen default"
+    for selector, body, _ in single:
+        assert declared(body, "grid-template-columns") == "minmax(0, 1fr)", selector
+
+
+
 def test_the_tilt_cancels_its_pending_frame_on_leave():
     """The reported bug: a queued frame overwriting the reset with a stale move.
 

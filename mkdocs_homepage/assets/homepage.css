@@ -44,7 +44,21 @@
   --md-home-radius-sm: 0.35em;
   --md-home-reveal-delay: 0ms;
   --md-home-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+
+  /* The comfortable minimum for a card in a grid the author has *not* sized: it
+     is what makes an unsized grid fill the row with as many columns as read
+     well, rather than as many as happen to fit. */
   --md-home-min: 13em;
+
+  /* The hard minimum for a grid the author *has* sized with `columns: N`.
+     Honouring the count is the whole point of the prop, so the comfortable
+     floor must not be allowed to veto it: at a 13em floor `columns: 4` needed
+     4 x 13em + 3 gutters = 875px of content column before the fourth track
+     could exist at all, and since the theme caps a content column well below
+     that, `columns: 4` rendered byte-for-byte like `columns: 3` at every
+     viewport.  This floor still drops columns on a phone -- it just lets the
+     author's number win on a desktop. */
+  --md-home-min-narrow: 8.5em;
   --md-home-icon-size: 1em;
 
   /* One rhythm, six steps, each roughly twice the one before.  The file used to
@@ -342,6 +356,18 @@
 }
 
 .md-typeset .md-home li {
+  margin: 0;
+}
+
+/* Material writes that indent as `[dir="ltr"] .md-typeset ul li` (and the `rtl`
+   mirror) -- (0,2,2) -- which out-scores the plain reset above at (0,2,1).
+   Because *every* `<li>` here is a grid cell, a flex item, a marquee slot or a
+   slide, the indent was never a list indent: each cell was placed in its track
+   and then inset 20px from the left with 20px of slack on the right, so a card
+   wall did not line up with its own heading and the last column stopped short of
+   the block's edge.  Matching Material's direction prefix wins outright, rather
+   than depending on this stylesheet loading after the theme's. */
+:is([dir="ltr"], [dir="rtl"]) .md-typeset .md-home li {
   margin: 0;
 }
 
@@ -822,16 +848,27 @@
 
 /* With an explicit `columns: N` the minimum track size is derived from N, so the
    grid fills with N columns when it fits and quietly drops to fewer when it does
-   not.  No media queries, and nothing to keep in sync. */
+   not.  No media queries, and nothing to keep in sync.
+
+   `auto-fill`, not `auto-fit`.  The two differ in exactly one way: `auto-fit`
+   *collapses* the tracks nothing landed in, so three cards in a `columns: 4`
+   grid became three wider cards.  A declared column count is a statement about
+   the layout -- the author asked for four -- and the spare one has to stay, or
+   a card wall loses the alignment that made it a wall.  Use a gap item
+   (`- blank`) to put the hole somewhere other than the end.
+
+   The floor here is `--md-home-min-narrow`, NOT `--md-home-min`: see the note on
+   the token.  With the comfortable floor the declared count was unreachable and
+   `columns: 4` was indistinguishable from `columns: 3`. */
 .md-typeset .md-home :is(.md-home__grid, .md-home__links, .md-home__steps)[data-home-cols] {
   grid-template-columns:
     repeat(
-      auto-fit,
+      auto-fill,
       minmax(
         min(
           100%,
           max(
-            var(--md-home-min),
+            var(--md-home-min-narrow),
             calc(
               (100% - (var(--md-home-cols) - 1) * var(--md-home-gap)) /
                 var(--md-home-cols)
@@ -841,6 +878,20 @@
         1fr
       )
     );
+}
+
+/* A deliberate blank position.
+
+   It holds its track (that is the entire point) and draws nothing: no border, no
+   reveal, nothing to announce.  It is a grid item with `display: none`'s absence
+   but `visibility`'s presence -- so `box-shadow: none` and no `min-height`, or a
+   stray line appears where the author asked for air. */
+.md-typeset .md-home .md-home__gap {
+  background: none;
+  box-shadow: none;
+  display: block;
+  min-height: 0;
+  padding: 0;
 }
 
 /* ==========================================================================
@@ -908,6 +959,73 @@
   min-width: 0;
 }
 
+/* The card's own aspect ratio, independent of the cover image's.
+
+   `align-self: start` is load-bearing, not cosmetic.  The cell is a flex row and
+   the card is its item, so `align-self: stretch` (the default, and what gives
+   unsized cards their equal heights) hands the card a *definite* height -- and a
+   definite height wins over `aspect-ratio` outright.  Measured in a browser,
+   all three `ratio:` values rendered 219.7x329.6, i.e. the tallest card in the
+   row, with the aspect ratio discarded and nothing to indicate it.  A sized card
+   opts out of stretching so the ratio decides the box instead.
+
+   `aspect-ratio` alone would then let the content overflow, so the body is made
+   the part that gives: the card is a flex column, and the inner pane may scroll
+   rather than push the footer out of the box.  A card with no `ratio:` reads
+   `auto` and behaves exactly as before. */
+.md-home__card--sized {
+  align-self: start;
+  aspect-ratio: var(--md-home-card-ratio);
+}
+
+.md-home__card--sized .md-home__card-inner {
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+/* Card on one side, its own prose on the other -- showcase's arrangement with a
+   card where the picture would be.  The pane is *always* rendered, so a row with
+   nothing to say still keeps the column, which is what lines a stack of these
+   up.  `rows` is a single column, because a row is the unit. */
+.md-typeset .md-home .md-home__cards--rows {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.md-home__cell--row {
+  display: block;
+}
+
+.md-home__card-row {
+  align-items: center;
+  display: grid;
+  gap: clamp(1.2em, 3vw, 2.4em);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 45em) {
+  .md-home__card-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .md-home__card-row--reverse > .md-home__card-pane {
+    order: 2;
+  }
+}
+
+.md-home__card-pane,
+.md-home__card-aside {
+  min-width: 0;
+}
+
+.md-home__card-aside > :first-child {
+  margin-block-start: 0;
+}
+
+.md-home__card-aside > :last-child {
+  margin-block-end: 0;
+}
+
 .md-home__cell--span2 {
   grid-column: span 2;
 }
@@ -924,7 +1042,7 @@
 }
 
 .md-home__card {
-  background-color: var(--md-default-bg-color);
+  background-color: var(--md-home-card-bg, var(--md-default-bg-color));
   border: 0.05rem solid var(--md-home-line);
   border-radius: var(--md-home-radius);
   box-shadow: var(--md-home-shadow);
@@ -941,6 +1059,42 @@
   text-decoration: none;
   transform-origin: center;
   transition: box-shadow 0.35s var(--md-home-ease), border-color 0.35s var(--md-home-ease);
+}
+
+/* --------------------------------------------------------------------------
+   A card may dress itself
+
+   `bg` / `glow` (and their `_dark` twins) are the one place the widget lets an
+   author name a colour, and they are opt-in: nothing here applies unless it was
+   written.  The renderer puts the values in `--md-home-card-*` on the card
+   itself, and the *stylesheet* decides which one a scheme uses -- it has to, for
+   both of two reasons:
+
+   1. An inline declaration beats every rule in this file, so a single inline
+      `background-color` could never have a dark variant at all.  The indirection
+      is what turns the scheme back into a decision CSS gets to make.
+   2. The accent is not a colour here, it is a *source*: `--md-home-tint`,
+      `--md-home-line`, `--md-home-glow` and the shadows are all derived from it
+      on this element.  Overriding `--md-home-accent` therefore redresses the
+      whole card -- edge, ring, icon, footer and highlight -- which is what "not
+      controlled by the theme" has to mean to be useful.
+
+   These sit *after* the rule above so they win the (0,1,0) tie by order; the
+   slate rule wins its own (0,2,0) tie the same way.  Declaring them before the
+   base rule is the trap: `background-color` would silently keep `--md-default-bg-color`. */
+.md-home__card {
+  --md-home-accent: var(--md-home-card-accent, hsl(var(--md-home-hue) 46% 45%));
+}
+
+[data-md-color-scheme="slate"] .md-home__card {
+  --md-home-accent: var(
+    --md-home-card-accent-dark,
+    var(--md-home-card-accent, hsl(var(--md-home-hue) 64% 70%))
+  );
+  background-color: var(
+    --md-home-card-bg-dark,
+    var(--md-home-card-bg, var(--md-default-bg-color))
+  );
 }
 
 .md-home__card-head {
